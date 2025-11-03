@@ -57,50 +57,55 @@ func (s *Server) PushComments(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Validate parent exists AND is not soft-deleted (critical for referential integrity)
-		var parentExists bool
-		if ext.ParentType == "note" {
-			err := tx.QueryRow(ctx,
-				`SELECT EXISTS(SELECT 1 FROM note WHERE owner_id = $1 AND uid = $2 AND deleted_at_ms IS NULL)`,
-				userID, *ext.ParentUID).Scan(&parentExists)
-			if err != nil {
-				log.Error().Err(err).Str("parent_uid", ext.ParentUID.String()).Msg("failed to check note existence")
-				acks = append(acks, pushAck{
-					UID:       ext.UID.String(),
-					Version:   ext.Version,
-					UpdatedAt: syncx.RFC3339(ext.UpdatedAtMs),
-					Error:     "failed to validate parent",
-				})
-				continue
+		// Only validate parent exists if we're NOT deleting the comment
+		// If deleting, we don't care about parent state (it may already be deleted)
+		// This allows comment tombstones to succeed even after parent is deleted
+		if ext.DeletedAtMs == nil {
+			// Validate parent exists AND is not soft-deleted (critical for referential integrity)
+			var parentExists bool
+			if ext.ParentType == "note" {
+				err := tx.QueryRow(ctx,
+					`SELECT EXISTS(SELECT 1 FROM note WHERE owner_id = $1 AND uid = $2 AND deleted_at_ms IS NULL)`,
+					userID, *ext.ParentUID).Scan(&parentExists)
+				if err != nil {
+					log.Error().Err(err).Str("parent_uid", ext.ParentUID.String()).Msg("failed to check note existence")
+					acks = append(acks, pushAck{
+						UID:       ext.UID.String(),
+						Version:   ext.Version,
+						UpdatedAt: syncx.RFC3339(ext.UpdatedAtMs),
+						Error:     "failed to validate parent",
+					})
+					continue
+				}
+			} else if ext.ParentType == "task" {
+				err := tx.QueryRow(ctx,
+					`SELECT EXISTS(SELECT 1 FROM task WHERE owner_id = $1 AND uid = $2 AND deleted_at_ms IS NULL)`,
+					userID, *ext.ParentUID).Scan(&parentExists)
+				if err != nil {
+					log.Error().Err(err).Str("parent_uid", ext.ParentUID.String()).Msg("failed to check task existence")
+					acks = append(acks, pushAck{
+						UID:       ext.UID.String(),
+						Version:   ext.Version,
+						UpdatedAt: syncx.RFC3339(ext.UpdatedAtMs),
+						Error:     "failed to validate parent",
+					})
+					continue
+				}
 			}
-		} else if ext.ParentType == "task" {
-			err := tx.QueryRow(ctx,
-				`SELECT EXISTS(SELECT 1 FROM task WHERE owner_id = $1 AND uid = $2 AND deleted_at_ms IS NULL)`,
-				userID, *ext.ParentUID).Scan(&parentExists)
-			if err != nil {
-				log.Error().Err(err).Str("parent_uid", ext.ParentUID.String()).Msg("failed to check task existence")
-				acks = append(acks, pushAck{
-					UID:       ext.UID.String(),
-					Version:   ext.Version,
-					UpdatedAt: syncx.RFC3339(ext.UpdatedAtMs),
-					Error:     "failed to validate parent",
-				})
-				continue
-			}
-		}
 
-		if !parentExists {
-			log.Warn().
-				Str("parent_type", ext.ParentType).
-				Str("parent_uid", ext.ParentUID.String()).
-				Msg("parent not found")
-			acks = append(acks, pushAck{
-				UID:       ext.UID.String(),
-				Version:   ext.Version,
-				UpdatedAt: syncx.RFC3339(ext.UpdatedAtMs),
-				Error:     fmt.Sprintf("parent %s not found: %s", ext.ParentType, ext.ParentUID.String()),
-			})
-			continue
+			if !parentExists {
+				log.Warn().
+					Str("parent_type", ext.ParentType).
+					Str("parent_uid", ext.ParentUID.String()).
+					Msg("parent not found")
+				acks = append(acks, pushAck{
+					UID:       ext.UID.String(),
+					Version:   ext.Version,
+					UpdatedAt: syncx.RFC3339(ext.UpdatedAtMs),
+					Error:     fmt.Sprintf("parent %s not found: %s", ext.ParentType, ext.ParentUID.String()),
+				})
+				continue
+			}
 		}
 
 		// Serialize payload back to JSON for storage
