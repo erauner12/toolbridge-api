@@ -87,7 +87,11 @@ func (s *Server) Routes(jwt auth.JWTCfg) http.Handler {
 		r.Post("/v1/sync/notes/push", s.PushNotes)
 		r.Get("/v1/sync/notes/pull", s.PullNotes)
 
-		// TODO: Tasks, Comments, Chats, ChatMessages
+		// Tasks
+		r.Post("/v1/sync/tasks/push", s.PushTasks)
+		r.Get("/v1/sync/tasks/pull", s.PullTasks)
+
+		// TODO: Comments, Chats, ChatMessages
 		// Will follow the same pattern as Notes
 	})
 

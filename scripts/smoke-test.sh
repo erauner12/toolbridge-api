@@ -7,10 +7,12 @@ set -e
 API_URL="${API_URL:-http://localhost:8081}"
 USER="smoke-test-user-$$"  # Unique user per run
 NOTE_UID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+TASK_UID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
 
 echo "Running smoke tests against $API_URL"
 echo "   User: $USER"
 echo "   Note UID: $NOTE_UID"
+echo "   Task UID: $TASK_UID"
 echo ""
 
 # Color output
@@ -205,19 +207,95 @@ else
     test_pass "No cursor (end of results)"
 fi
 
+# Test 10: Push a task
+test_step "Pushing task (version 1)"
+TASK_PUSH_RESP=$(curl -s -X POST "$API_URL/v1/sync/tasks/push" \
+    -H "X-Debug-Sub: $USER" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"items\": [{
+            \"uid\": \"$TASK_UID\",
+            \"title\": \"Smoke Test Task\",
+            \"done\": false,
+            \"updatedTs\": \"2025-11-03T10:00:00Z\",
+            \"sync\": {
+                \"version\": 1,
+                \"isDeleted\": false
+            }
+        }]
+    }")
+
+TASK_VERSION=$(echo "$TASK_PUSH_RESP" | jq -r '.[0].version')
+TASK_ERROR=$(echo "$TASK_PUSH_RESP" | jq -r '.[0].error')
+
+if [ "$TASK_ERROR" != "null" ] && [ "$TASK_ERROR" != "" ]; then
+    test_fail "Task push failed: $TASK_ERROR"
+fi
+
+if [ "$TASK_VERSION" -eq 1 ]; then
+    test_pass "Task pushed (version=$TASK_VERSION)"
+else
+    test_fail "Task push returned unexpected version: $TASK_VERSION"
+fi
+
+# Test 11: Pull the task
+test_step "Pulling tasks"
+TASK_PULL_RESP=$(curl -s "$API_URL/v1/sync/tasks/pull?limit=100" \
+    -H "X-Debug-Sub: $USER")
+
+FOUND_TASK=$(echo "$TASK_PULL_RESP" | jq -r ".upserts[] | select(.uid == \"$TASK_UID\") | .title")
+
+if [ "$FOUND_TASK" = "Smoke Test Task" ]; then
+    test_pass "Task pulled successfully (found in upserts)"
+else
+    test_fail "Task not found in pull response"
+fi
+
+# Test 12: Delete task (soft delete)
+test_step "Deleting task (soft delete)"
+TASK_DELETE_RESP=$(curl -s -X POST "$API_URL/v1/sync/tasks/push" \
+    -H "X-Debug-Sub: $USER" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"items\": [{
+            \"uid\": \"$TASK_UID\",
+            \"title\": \"Smoke Test Task\",
+            \"updatedTs\": \"2025-11-03T10:01:00Z\",
+            \"sync\": {
+                \"version\": 1,
+                \"isDeleted\": true,
+                \"deletedAt\": \"2025-11-03T10:01:00Z\"
+            }
+        }]
+    }")
+
+TASK_DELETE_VERSION=$(echo "$TASK_DELETE_RESP" | jq -r '.[0].version')
+
+if [ "$TASK_DELETE_VERSION" -eq 2 ]; then
+    test_pass "Task deleted (version incremented to 2)"
+else
+    test_fail "Task delete failed: version is $TASK_DELETE_VERSION (expected 2)"
+fi
+
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}✓ All smoke tests passed!${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo "Summary:"
-echo "  • Health check: ✓"
-echo "  • Push note: ✓"
-echo "  • Pull note: ✓"
-echo "  • Idempotency: ✓"
-echo "  • LWW conflict resolution: ✓"
-echo "  • Content preservation: ✓"
-echo "  • Soft delete: ✓"
-echo "  • Tombstone: ✓"
-echo "  • Cursor pagination: ✓"
+echo "  Notes:"
+echo "    • Push note: ✓"
+echo "    • Pull note: ✓"
+echo "    • Idempotency: ✓"
+echo "    • LWW conflict resolution: ✓"
+echo "    • Content preservation: ✓"
+echo "    • Soft delete: ✓"
+echo "    • Tombstone: ✓"
+echo "    • Cursor pagination: ✓"
+echo "  Tasks:"
+echo "    • Push task: ✓"
+echo "    • Pull task: ✓"
+echo "    • Soft delete: ✓"
+echo "  General:"
+echo "    • Health check: ✓"
 echo ""
