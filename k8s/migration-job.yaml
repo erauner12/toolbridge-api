@@ -1,0 +1,66 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: toolbridge-migrate
+  namespace: toolbridge
+spec:
+  # Keep completed jobs for debugging
+  ttlSecondsAfterFinished: 86400  # 24 hours
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: toolbridge-migrate
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+      # Wait for postgres to be ready
+      - name: wait-for-postgres
+        image: postgres:16-alpine
+        command:
+          - sh
+          - -c
+          - |
+            until pg_isready -h toolbridge-postgres -U toolbridge; do
+              echo "Waiting for postgres..."
+              sleep 2
+            done
+            echo "Postgres is ready!"
+      containers:
+      - name: migrate
+        image: toolbridge-api:latest  # Replace with your actual image
+        command: ["/bin/sh", "/app/scripts/migrate.sh"]
+        env:
+        # Build DATABASE_URL from parts
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: toolbridge-secret
+              key: postgres-password
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: toolbridge-config
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: toolbridge-config
+              key: DB_PORT
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: toolbridge-config
+              key: DB_NAME
+        - name: DB_USER
+          valueFrom:
+            configMapKeyRef:
+              name: toolbridge-config
+              key: DB_USER
+        - name: DB_SSLMODE
+          valueFrom:
+            configMapKeyRef:
+              name: toolbridge-config
+              key: DB_SSLMODE
+        - name: DATABASE_URL
+          value: "postgres://$(DB_USER):$(POSTGRES_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)"

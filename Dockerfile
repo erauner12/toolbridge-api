@@ -19,13 +19,20 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/server ./cmd/serv
 # Runtime stage
 FROM alpine:3.19
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates tzdata
+# Install runtime dependencies (wget for healthcheck, bash for scripts)
+RUN apk add --no-cache ca-certificates tzdata wget bash postgresql-client
 
 WORKDIR /app
 
 # Copy binary from builder
 COPY --from=builder /app/server /app/server
+
+# Copy migrations and scripts for migration runner
+COPY migrations /app/migrations
+COPY scripts /app/scripts
+
+# Make scripts executable
+RUN chmod +x /app/scripts/*.sh
 
 # Non-root user
 RUN addgroup -g 1000 app && \
@@ -34,10 +41,10 @@ RUN addgroup -g 1000 app && \
 
 USER app
 
-# Health check
+# Health check (PORT defaults to 8080)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8081/healthz || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-8080}/healthz || exit 1
 
-EXPOSE 8081
+EXPOSE ${PORT:-8080}
 
 ENTRYPOINT ["/app/server"]
