@@ -52,9 +52,21 @@ func main() {
 	// JWT configuration
 	// DevMode ONLY enabled when ENV is explicitly set to "dev" (allows X-Debug-Sub header)
 	// Secure by default: if ENV is unset or misspelled, DevMode stays false
+	jwtSecret := env("JWT_HS256_SECRET", "dev-secret-change-in-production")
+	isDevMode := env("ENV", "") == "dev"
+
 	jwtCfg := auth.JWTCfg{
-		HS256Secret: env("JWT_HS256_SECRET", "dev-secret-change-in-production"),
-		DevMode:     env("ENV", "") == "dev",
+		HS256Secret: jwtSecret,
+		DevMode:     isDevMode,
+	}
+
+	// Security validation: refuse to start in production with default/missing JWT secret
+	if !isDevMode && (jwtSecret == "" || jwtSecret == "dev-secret-change-in-production") {
+		log.Fatal().
+			Str("secret", jwtSecret).
+			Msg("FATAL: Cannot start in production mode with default or missing JWT_HS256_SECRET. " +
+				"This allows anyone to forge tokens and bypass authentication. " +
+				"Set JWT_HS256_SECRET environment variable to a secure random value (e.g., openssl rand -base64 32)")
 	}
 
 	httpAddr := env("HTTP_ADDR", ":8081")
