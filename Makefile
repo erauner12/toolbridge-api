@@ -1,17 +1,20 @@
-.PHONY: help dev test build docker-build docker-up docker-down clean
+.PHONY: help dev test test-unit test-integration test-smoke build docker-build docker-up docker-down clean
 
 # Default target
 help:
 	@echo "ToolBridge API - Development Commands"
 	@echo ""
-	@echo "  make dev          - Start local dev server"
-	@echo "  make test         - Run tests"
-	@echo "  make build        - Build binary"
-	@echo "  make docker-build - Build Docker image"
-	@echo "  make docker-up    - Start Postgres via docker-compose"
-	@echo "  make docker-down  - Stop Postgres"
-	@echo "  make migrate      - Run migrations against local DB"
-	@echo "  make clean        - Clean build artifacts"
+	@echo "  make dev              - Start local dev server"
+	@echo "  make test             - Run all tests (unit + integration)"
+	@echo "  make test-unit        - Run unit tests only (fast, no DB)"
+	@echo "  make test-integration - Run integration tests (requires DB)"
+	@echo "  make test-smoke       - Run smoke tests against running server"
+	@echo "  make build            - Build binary"
+	@echo "  make docker-build     - Build Docker image"
+	@echo "  make docker-up        - Start Postgres via docker-compose"
+	@echo "  make docker-down      - Stop Postgres"
+	@echo "  make migrate          - Run migrations against local DB"
+	@echo "  make clean            - Clean build artifacts"
 
 # Local development server
 dev:
@@ -21,9 +24,27 @@ dev:
 	ENV=dev \
 	go run ./cmd/server
 
-# Run tests
+# Run all tests (unit + integration)
 test:
+	@echo "Running all tests..."
+	TEST_DATABASE_URL=postgres://toolbridge:dev-password@localhost:5432/toolbridge?sslmode=disable \
 	go test -v -race -cover ./...
+
+# Run unit tests only (no database required)
+test-unit:
+	@echo "Running unit tests..."
+	go test -v -short -race -cover ./...
+
+# Run integration tests (requires database)
+test-integration:
+	@echo "Running integration tests..."
+	TEST_DATABASE_URL=postgres://toolbridge:dev-password@localhost:5432/toolbridge?sslmode=disable \
+	go test -v -race -cover ./internal/httpapi/...
+
+# Run smoke tests against running server
+test-smoke:
+	@echo "Running smoke tests..."
+	@./scripts/smoke-test.sh
 
 # Build binary
 build:

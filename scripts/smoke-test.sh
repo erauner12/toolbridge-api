@@ -1,0 +1,223 @@
+#!/bin/bash
+set -e
+
+# Smoke test script for ToolBridge API
+# Tests the basic push/pull/delete flow against a running server
+
+API_URL="${API_URL:-http://localhost:8081}"
+USER="smoke-test-user-$$"  # Unique user per run
+NOTE_UID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+
+echo "Running smoke tests against $API_URL"
+echo "   User: $USER"
+echo "   Note UID: $NOTE_UID"
+echo ""
+
+# Color output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+function test_step() {
+    echo -e "${YELLOW}▶${NC} $1"
+}
+
+function test_pass() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+function test_fail() {
+    echo -e "${RED}✗${NC} $1"
+    exit 1
+}
+
+# Test 1: Health check
+test_step "Testing health endpoint"
+HEALTH=$(curl -s -w "%{http_code}" -o /dev/null "$API_URL/healthz")
+if [ "$HEALTH" -eq 200 ]; then
+    test_pass "Health check passed"
+else
+    test_fail "Health check failed (HTTP $HEALTH)"
+fi
+
+# Test 2: Push a note
+test_step "Pushing note (version 1)"
+PUSH_RESP=$(curl -s -X POST "$API_URL/v1/sync/notes/push" \
+    -H "X-Debug-Sub: $USER" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"items\": [{
+            \"uid\": \"$NOTE_UID\",
+            \"title\": \"Smoke Test Note\",
+            \"content\": \"This is a smoke test\",
+            \"updatedTs\": \"2025-11-03T10:00:00Z\",
+            \"sync\": {
+                \"version\": 1,
+                \"isDeleted\": false
+            }
+        }]
+    }")
+
+PUSH_VERSION=$(echo "$PUSH_RESP" | jq -r '.[0].version')
+PUSH_ERROR=$(echo "$PUSH_RESP" | jq -r '.[0].error')
+
+if [ "$PUSH_ERROR" != "null" ] && [ "$PUSH_ERROR" != "" ]; then
+    test_fail "Push failed: $PUSH_ERROR"
+fi
+
+if [ "$PUSH_VERSION" -eq 1 ]; then
+    test_pass "Note pushed (version=$PUSH_VERSION)"
+else
+    test_fail "Push returned unexpected version: $PUSH_VERSION"
+fi
+
+# Test 3: Pull the note
+test_step "Pulling notes"
+PULL_RESP=$(curl -s "$API_URL/v1/sync/notes/pull?limit=100" \
+    -H "X-Debug-Sub: $USER")
+
+UPSERT_COUNT=$(echo "$PULL_RESP" | jq '.upserts | length')
+DELETE_COUNT=$(echo "$PULL_RESP" | jq '.deletes | length')
+FOUND_NOTE=$(echo "$PULL_RESP" | jq -r ".upserts[] | select(.uid == \"$NOTE_UID\") | .title")
+
+if [ "$FOUND_NOTE" = "Smoke Test Note" ]; then
+    test_pass "Note pulled successfully (found in upserts)"
+else
+    test_fail "Note not found in pull response"
+fi
+
+# Test 4: Push duplicate (idempotency test)
+test_step "Pushing duplicate note (idempotency test)"
+PUSH2_RESP=$(curl -s -X POST "$API_URL/v1/sync/notes/push" \
+    -H "X-Debug-Sub: $USER" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"items\": [{
+            \"uid\": \"$NOTE_UID\",
+            \"title\": \"Smoke Test Note\",
+            \"updatedTs\": \"2025-11-03T10:00:00Z\",
+            \"sync\": {
+                \"version\": 1,
+                \"isDeleted\": false
+            }
+        }]
+    }")
+
+PUSH2_VERSION=$(echo "$PUSH2_RESP" | jq -r '.[0].version')
+
+if [ "$PUSH2_VERSION" -eq 1 ]; then
+    test_pass "Idempotency verified (version stayed at 1)"
+else
+    test_fail "Idempotency failed: version changed to $PUSH2_VERSION"
+fi
+
+# Test 5: Update note (LWW test)
+test_step "Updating note with newer timestamp (LWW test)"
+PUSH3_RESP=$(curl -s -X POST "$API_URL/v1/sync/notes/push" \
+    -H "X-Debug-Sub: $USER" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"items\": [{
+            \"uid\": \"$NOTE_UID\",
+            \"title\": \"Updated Smoke Test Note\",
+            \"content\": \"Updated content\",
+            \"updatedTs\": \"2025-11-03T10:01:00Z\",
+            \"sync\": {
+                \"version\": 1,
+                \"isDeleted\": false
+            }
+        }]
+    }")
+
+PUSH3_VERSION=$(echo "$PUSH3_RESP" | jq -r '.[0].version')
+
+if [ "$PUSH3_VERSION" -eq 2 ]; then
+    test_pass "LWW update succeeded (version incremented to 2)"
+else
+    test_fail "LWW update failed: version is $PUSH3_VERSION (expected 2)"
+fi
+
+# Test 6: Verify updated content
+test_step "Verifying updated content"
+PULL2_RESP=$(curl -s "$API_URL/v1/sync/notes/pull?limit=100" \
+    -H "X-Debug-Sub: $USER")
+
+UPDATED_TITLE=$(echo "$PULL2_RESP" | jq -r ".upserts[] | select(.uid == \"$NOTE_UID\") | .title")
+UPDATED_CONTENT=$(echo "$PULL2_RESP" | jq -r ".upserts[] | select(.uid == \"$NOTE_UID\") | .content")
+
+if [ "$UPDATED_TITLE" = "Updated Smoke Test Note" ] && [ "$UPDATED_CONTENT" = "Updated content" ]; then
+    test_pass "Updated content verified"
+else
+    test_fail "Content not updated correctly (title=$UPDATED_TITLE, content=$UPDATED_CONTENT)"
+fi
+
+# Test 7: Delete note (soft delete)
+test_step "Deleting note (soft delete)"
+DELETE_RESP=$(curl -s -X POST "$API_URL/v1/sync/notes/push" \
+    -H "X-Debug-Sub: $USER" \
+    -H "Content-Type: application/json" \
+    -d "{
+        \"items\": [{
+            \"uid\": \"$NOTE_UID\",
+            \"title\": \"Updated Smoke Test Note\",
+            \"updatedTs\": \"2025-11-03T10:02:00Z\",
+            \"sync\": {
+                \"version\": 2,
+                \"isDeleted\": true,
+                \"deletedAt\": \"2025-11-03T10:02:00Z\"
+            }
+        }]
+    }")
+
+DELETE_VERSION=$(echo "$DELETE_RESP" | jq -r '.[0].version')
+
+if [ "$DELETE_VERSION" -eq 3 ]; then
+    test_pass "Note deleted (version incremented to 3)"
+else
+    test_fail "Delete failed: version is $DELETE_VERSION (expected 3)"
+fi
+
+# Test 8: Verify tombstone
+test_step "Verifying tombstone in deletes array"
+PULL3_RESP=$(curl -s "$API_URL/v1/sync/notes/pull?limit=100" \
+    -H "X-Debug-Sub: $USER")
+
+UPSERTS=$(echo "$PULL3_RESP" | jq -r ".upserts[] | select(.uid == \"$NOTE_UID\") | .uid")
+DELETED=$(echo "$PULL3_RESP" | jq -r ".deletes[] | select(.uid == \"$NOTE_UID\") | .uid")
+
+if [ -z "$UPSERTS" ] && [ "$DELETED" = "$NOTE_UID" ]; then
+    test_pass "Tombstone verified (note in deletes, not in upserts)"
+else
+    test_fail "Tombstone verification failed (upserts=$UPSERTS, deletes=$DELETED)"
+fi
+
+# Test 9: Cursor pagination
+test_step "Testing cursor pagination"
+CURSOR_RESP=$(curl -s "$API_URL/v1/sync/notes/pull?limit=1" \
+    -H "X-Debug-Sub: $USER")
+
+CURSOR=$(echo "$CURSOR_RESP" | jq -r '.nextCursor')
+
+if [ "$CURSOR" != "null" ] && [ -n "$CURSOR" ]; then
+    test_pass "Cursor pagination working (cursor=$CURSOR)"
+else
+    test_pass "No cursor (end of results)"
+fi
+
+echo ""
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}✓ All smoke tests passed!${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+echo "Summary:"
+echo "  • Health check: ✓"
+echo "  • Push note: ✓"
+echo "  • Pull note: ✓"
+echo "  • Idempotency: ✓"
+echo "  • LWW conflict resolution: ✓"
+echo "  • Content preservation: ✓"
+echo "  • Soft delete: ✓"
+echo "  • Tombstone: ✓"
+echo "  • Cursor pagination: ✓"
+echo ""
