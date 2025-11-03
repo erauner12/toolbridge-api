@@ -23,6 +23,16 @@ spec:
             secretKeyRef:
               name: toolbridge-secret
               key: postgres-password
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: toolbridge-config
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: toolbridge-config
+              key: DB_PORT
         - name: DB_USER
           valueFrom:
             configMapKeyRef:
@@ -37,7 +47,7 @@ spec:
           - sh
           - -c
           - |
-            until PGPASSWORD=$POSTGRES_PASSWORD psql -h toolbridge-postgres -U $DB_USER -d $DB_NAME -c 'SELECT 1' > /dev/null 2>&1; do
+            until PGPASSWORD=$POSTGRES_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c 'SELECT 1' > /dev/null 2>&1; do
               echo "Waiting for postgres..."
               sleep 2
             done

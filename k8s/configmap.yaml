@@ -15,4 +15,4 @@ data:
   DB_PORT: "5432"
   DB_NAME: "toolbridge"
   DB_USER: "toolbridge"
-  DB_SSLMODE: "require"
+  DB_SSLMODE: "disable"  # SSL not configured in postgres.yaml; use "require" if you add TLS
