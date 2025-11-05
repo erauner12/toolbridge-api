@@ -1,4 +1,11 @@
-.PHONY: help dev test test-unit test-integration test-smoke test-all test-e2e ci build docker-build docker-up docker-down clean
+.PHONY: help dev test test-unit test-integration test-smoke test-all test-e2e ci build docker-build docker-tag docker-push docker-release docker-up docker-down clean
+
+# Docker configuration
+DOCKER_REGISTRY ?= ghcr.io
+DOCKER_USERNAME ?= erauner12
+IMAGE_NAME ?= toolbridge-api
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+FULL_IMAGE_NAME = $(DOCKER_REGISTRY)/$(DOCKER_USERNAME)/$(IMAGE_NAME)
 
 # Default target
 help:
@@ -18,7 +25,10 @@ help:
 	@echo "  make ci               - Run CI pipeline locally (lint + test-all)"
 	@echo ""
 	@echo "Docker:"
-	@echo "  make docker-build     - Build Docker image"
+	@echo "  make docker-build     - Build Docker image locally"
+	@echo "  make docker-tag       - Tag image for registry"
+	@echo "  make docker-push      - Push tagged image to registry"
+	@echo "  make docker-release   - Build, tag, and push (VERSION=vX.Y.Z)"
 	@echo "  make docker-up        - Start Postgres via docker-compose"
 	@echo "  make docker-down      - Stop Postgres"
 	@echo ""
@@ -143,7 +153,30 @@ build:
 
 # Build Docker image
 docker-build:
+	@echo "Building Docker image..."
 	docker build -t toolbridge-api:latest .
+	@echo "✓ Built toolbridge-api:latest"
+
+# Tag Docker image for registry
+docker-tag:
+	@echo "Tagging image $(FULL_IMAGE_NAME):$(VERSION)"
+	docker tag toolbridge-api:latest $(FULL_IMAGE_NAME):$(VERSION)
+	docker tag toolbridge-api:latest $(FULL_IMAGE_NAME):latest
+	@echo "✓ Tagged $(FULL_IMAGE_NAME):$(VERSION) and $(FULL_IMAGE_NAME):latest"
+
+# Push Docker image to registry
+docker-push:
+	@echo "Pushing $(FULL_IMAGE_NAME):$(VERSION)"
+	docker push $(FULL_IMAGE_NAME):$(VERSION)
+	docker push $(FULL_IMAGE_NAME):latest
+	@echo "✓ Pushed $(FULL_IMAGE_NAME):$(VERSION) and $(FULL_IMAGE_NAME):latest"
+
+# Build, tag, and push Docker image (one-step release)
+docker-release: docker-build docker-tag docker-push
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✓ Released $(FULL_IMAGE_NAME):$(VERSION)"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Start Postgres with docker-compose
 docker-up:
