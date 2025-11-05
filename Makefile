@@ -1,4 +1,4 @@
-.PHONY: help dev test test-unit test-integration test-smoke test-all test-e2e ci build docker-build docker-tag docker-push docker-release docker-up docker-down clean
+.PHONY: help dev test test-unit test-integration test-smoke test-all test-e2e ci build docker-build docker-build-local docker-build-multiarch docker-release docker-up docker-down clean
 
 # Docker configuration
 DOCKER_REGISTRY ?= ghcr.io
@@ -6,6 +6,7 @@ DOCKER_USERNAME ?= erauner12
 IMAGE_NAME ?= toolbridge-api
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 FULL_IMAGE_NAME = $(DOCKER_REGISTRY)/$(DOCKER_USERNAME)/$(IMAGE_NAME)
+PLATFORMS ?= linux/amd64,linux/arm64
 
 # Default target
 help:
@@ -25,12 +26,15 @@ help:
 	@echo "  make ci               - Run CI pipeline locally (lint + test-all)"
 	@echo ""
 	@echo "Docker:"
-	@echo "  make docker-build     - Build Docker image locally"
-	@echo "  make docker-tag       - Tag image for registry"
-	@echo "  make docker-push      - Push tagged image to registry"
-	@echo "  make docker-release   - Build, tag, and push (VERSION=vX.Y.Z)"
-	@echo "  make docker-up        - Start Postgres via docker-compose"
-	@echo "  make docker-down      - Stop Postgres"
+	@echo "  make docker-build-local    - Build image for local platform (fast)"
+	@echo "  make docker-build-multiarch - Build multi-arch image (amd64, arm64)"
+	@echo "  make docker-release        - Build and push multi-arch image"
+	@echo "  make docker-up             - Start Postgres via docker-compose"
+	@echo "  make docker-down           - Stop Postgres"
+	@echo ""
+	@echo "Docker Variables:"
+	@echo "  VERSION=vX.Y.Z        - Set image version (default: git describe)"
+	@echo "  PLATFORMS=linux/amd64 - Override target platforms"
 	@echo ""
 	@echo "Database:"
 	@echo "  make migrate          - Run migrations against local DB"
@@ -151,32 +155,45 @@ build:
 	@echo "Building server..."
 	CGO_ENABLED=0 go build -o bin/server ./cmd/server
 
-# Build Docker image
-docker-build:
-	@echo "Building Docker image..."
+# Build Docker image for local platform (fast, for development)
+docker-build-local:
+	@echo "Building Docker image for local platform..."
 	docker build -t toolbridge-api:latest .
 	@echo "✓ Built toolbridge-api:latest"
 
-# Tag Docker image for registry
-docker-tag:
-	@echo "Tagging image $(FULL_IMAGE_NAME):$(VERSION)"
-	docker tag toolbridge-api:latest $(FULL_IMAGE_NAME):$(VERSION)
-	docker tag toolbridge-api:latest $(FULL_IMAGE_NAME):latest
-	@echo "✓ Tagged $(FULL_IMAGE_NAME):$(VERSION) and $(FULL_IMAGE_NAME):latest"
+# Build multi-architecture Docker image (does not push)
+docker-build-multiarch:
+	@echo "Building multi-arch Docker image..."
+	@echo "Platforms: $(PLATFORMS)"
+	docker buildx build \
+		--platform $(PLATFORMS) \
+		-t $(FULL_IMAGE_NAME):$(VERSION) \
+		-t $(FULL_IMAGE_NAME):latest \
+		.
+	@echo "✓ Built $(FULL_IMAGE_NAME):$(VERSION) for $(PLATFORMS)"
 
-# Push Docker image to registry
-docker-push:
-	@echo "Pushing $(FULL_IMAGE_NAME):$(VERSION)"
-	docker push $(FULL_IMAGE_NAME):$(VERSION)
-	docker push $(FULL_IMAGE_NAME):latest
-	@echo "✓ Pushed $(FULL_IMAGE_NAME):$(VERSION) and $(FULL_IMAGE_NAME):latest"
-
-# Build, tag, and push Docker image (one-step release)
-docker-release: docker-build docker-tag docker-push
+# Build and push multi-architecture Docker image (for production)
+docker-release:
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "Building and pushing multi-arch image"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "Registry: $(FULL_IMAGE_NAME)"
+	@echo "Version:  $(VERSION)"
+	@echo "Platforms: $(PLATFORMS)"
+	@echo ""
+	docker buildx build \
+		--platform $(PLATFORMS) \
+		-t $(FULL_IMAGE_NAME):$(VERSION) \
+		-t $(FULL_IMAGE_NAME):latest \
+		--push \
+		.
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "✓ Released $(FULL_IMAGE_NAME):$(VERSION)"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Backward compatibility alias
+docker-build: docker-build-local
 
 # Start Postgres with docker-compose
 docker-up:
