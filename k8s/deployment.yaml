@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: toolbridge-api
+  namespace: toolbridge
+  labels:
+    app: toolbridge-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: toolbridge-api
+  template:
+    metadata:
+      labels:
+        app: toolbridge-api
+    spec:
+      # Use service account with permissions to read Job status
+      serviceAccountName: toolbridge-api
+
+      # Wait for migrations to complete before starting
+      initContainers:
+      - name: wait-for-migrations
+        image: bitnami/kubectl:latest
+        command:
+          - sh
+          - -c
+          - |
+            # Check if migration Job exists
+            if kubectl get job toolbridge-migrate -n toolbridge > /dev/null 2>&1; then
+              # Job exists - wait for it to succeed
+              echo "Migration job found - waiting for completion..."
+              until kubectl get job toolbridge-migrate -n toolbridge -o jsonpath='{.status.succeeded}' | grep -q "1"; do
+                echo "Waiting for migrations to complete..."
+                sleep 5
+              done
+            else
+              # Job doesn't exist - assume it already completed and was cleaned up by TTL
+              echo "Migration job not found - assuming migrations already complete (TTL cleanup)"
+            fi
+            echo "Migrations complete!"
+      containers:
+      - name: api
+        image: toolbridge-api:latest  # Replace with your actual image
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        # Simple environment variables from ConfigMap
+        - name: ENV
+          valueFrom:
+            configMapKeyRef:
+              name: toolbridge-config
+              key: ENV
+        - name: HTTP_ADDR
+          valueFrom:
+            configMapKeyRef:
+              name: toolbridge-config
+              key: HTTP_ADDR
+
+        # Database connection parts
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: toolbridge-config
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: toolbridge-config
+              key: DB_PORT
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: toolbridge-config
+              key: DB_NAME
+        - name: DB_USER
+          valueFrom:
+            configMapKeyRef:
+              name: toolbridge-config
+              key: DB_USER
+        - name: DB_SSLMODE
+          valueFrom:
+            configMapKeyRef:
+              name: toolbridge-config
+              key: DB_SSLMODE
+
+        # Sensitive values from Secret
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: toolbridge-secret
+              key: postgres-password
+        - name: JWT_HS256_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: toolbridge-secret
+              key: jwt-secret
+
+        # Build complete DATABASE_URL
+        - name: DATABASE_URL
+          value: "postgres://$(DB_USER):$(POSTGRES_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=$(DB_SSLMODE)"
+
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi

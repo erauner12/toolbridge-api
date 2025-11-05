@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: toolbridge-api
+  namespace: toolbridge
+  labels:
+    app: toolbridge-api
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: toolbridge-api
+
+---
+# Optional: LoadBalancer service for external access
+# Uncomment if you want external access without an Ingress
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: toolbridge-api-external
+#   namespace: toolbridge
+#   labels:
+#     app: toolbridge-api
+# spec:
+#   type: LoadBalancer
+#   ports:
+#   - port: 8080
+#     targetPort: 8080
+#     protocol: TCP
+#     name: http
+#   selector:
+#     app: toolbridge-api
