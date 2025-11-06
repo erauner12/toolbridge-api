@@ -10,6 +10,38 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// ============================================================================
+// Rate Limiting with Token Bucket Algorithm
+// ============================================================================
+//
+// PATTERN: Per-user token bucket for smooth, fair rate limiting
+//
+// The token bucket algorithm allows:
+// - Burst traffic up to capacity (good UX for interactive clients)
+// - Smooth long-term rate limiting (no thundering herd at window boundaries)
+// - Per-user fairness (one user can't starve others)
+//
+// Configuration:
+//   RateLimitInfo{
+//     WindowSeconds: 60,   // 1 minute window
+//     MaxRequests:   600,  // 600 requests per window
+//     Burst:         120,  // Allow 120 request burst
+//   }
+//   => Refill rate: 600/60 = 10 tokens/second
+//
+// Algorithm:
+//   1. On request: calculate elapsed time since last refill
+//   2. Add (elapsed * refillRate) tokens, capped at capacity
+//   3. If tokens >= 1.0: consume 1, allow request
+//   4. Else: calculate wait time, return 429 with Retry-After
+//
+// Production Note:
+//   Current implementation uses in-memory map[userID]*TokenBucket.
+//   For distributed systems, replace with Redis-backed rate limiter.
+//
+// See: docs/sync_phase7_design_patterns.md for full pattern documentation
+// ============================================================================
+
 // TokenBucket implements a token bucket rate limiter
 type TokenBucket struct {
 	tokens     float64
@@ -66,9 +98,6 @@ type RateLimiter struct {
 
 // NewRateLimiter creates a new rate limiter with the given configuration
 func NewRateLimiter(config RateLimitInfo) *RateLimiter {
-	// Calculate refill rate: maxRequests per windowSeconds
-	refillRate := float64(config.MaxRequests) / float64(config.WindowSeconds)
-
 	rl := &RateLimiter{
 		buckets: make(map[string]*TokenBucket),
 		config:  config,
