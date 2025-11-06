@@ -342,7 +342,7 @@ func TestDeleteChatMessageAfterParentDeleted_Integration(t *testing.T) {
 			},
 		},
 	})
-	req = httptest.NewRequest("POST", "/v1/sync/chat-messages/push", bytes.NewReader(messageBody))
+	req = httptest.NewRequest("POST", "/v1/sync/chat_messages/push", bytes.NewReader(messageBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Debug-Sub", "test-user")
 	router.ServeHTTP(httptest.NewRecorder(), req)
@@ -384,7 +384,7 @@ func TestDeleteChatMessageAfterParentDeleted_Integration(t *testing.T) {
 		},
 	})
 
-	req = httptest.NewRequest("POST", "/v1/sync/chat-messages/push", bytes.NewReader(deleteMessageBody))
+	req = httptest.NewRequest("POST", "/v1/sync/chat_messages/push", bytes.NewReader(deleteMessageBody))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Debug-Sub", "test-user")
 	rec := httptest.NewRecorder()
