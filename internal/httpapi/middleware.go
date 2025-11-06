@@ -24,11 +24,12 @@ func SessionMiddleware(next http.Handler) http.Handler {
 		if sessionID != "" {
 			// Add to context for downstream handlers
 			ctx := context.WithValue(r.Context(), sessionIDKey, sessionID)
+	
+			// Build session logger from existing contextual logger (preserves correlation ID)
+			logger := log.Ctx(ctx).With().Str("sessionId", sessionID).Logger()
+			ctx = logger.WithContext(ctx)
+	
 			r = r.WithContext(ctx)
-
-			// Add to logger context for all logs in this request
-			logger := log.With().Str("sessionId", sessionID).Logger()
-			r = r.WithContext(logger.WithContext(r.Context()))
 		}
 
 		next.ServeHTTP(w, r)
