@@ -159,20 +159,14 @@ func (rl *RateLimiter) cleanupLoop() {
 	}
 }
 
-// Global rate limiter instance (in production, use Redis or similar for distributed systems)
-var globalRateLimiter *RateLimiter
-
-// initRateLimiter initializes the global rate limiter (called from router setup)
-func initRateLimiter(config RateLimitInfo) {
-	globalRateLimiter = NewRateLimiter(config)
-}
-
 // RateLimitMiddleware returns a middleware that enforces rate limiting per user
+// Each middleware instance creates its own rate limiter with the provided configuration,
+// allowing different routes to have different rate limits.
+// Production Note: For distributed systems, replace with Redis-backed rate limiter.
 func RateLimitMiddleware(config RateLimitInfo) func(http.Handler) http.Handler {
-	// Initialize global rate limiter if not already done
-	if globalRateLimiter == nil {
-		initRateLimiter(config)
-	}
+	// Create a dedicated rate limiter for this middleware instance
+	// This allows different routes to have different rate limits
+	limiter := NewRateLimiter(config)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +179,7 @@ func RateLimitMiddleware(config RateLimitInfo) func(http.Handler) http.Handler {
 			}
 
 			// Check rate limit
-			allowed, remaining, resetTime := globalRateLimiter.Allow(userID)
+			allowed, remaining, resetTime := limiter.Allow(userID)
 
 			// Set rate limit headers
 			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(config.MaxRequests))
