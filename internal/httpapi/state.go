@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/erauner12/toolbridge-api/internal/auth"
+	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog/log"
 )
 
@@ -43,7 +44,7 @@ func (s *Server) GetSyncState(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		// If row doesn't exist, return default state (epoch=1)
-		if err == sql.ErrNoRows {
+		if err == pgx.ErrNoRows {
 			writeJSON(w, http.StatusOK, syncStateResponse{
 				Epoch: 1,
 			})
