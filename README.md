@@ -17,6 +17,16 @@ Delta sync backend for ToolBridge. Implements Last-Write-Wins (LWW) conflict res
 - **Conflict Resolution**: Last-Write-Wins based on `updated_at_ms`
 - **Idempotency**: Duplicate pushes with same timestamp don't bump version
 
+## Documentation
+
+- **[Client-Side Sync Guide](docs/CLIENT_SYNC_GUIDE.md)** - Comprehensive guide for implementing sync in your client application
+  - Architecture and design principles
+  - Three-phase sync protocol (DELETE → UPLOAD → DOWNLOAD)
+  - Session and epoch management
+  - Code examples in Dart (adaptable to any language)
+  - Common patterns: Reset to Server, Full Wipe, Conflict Resolution
+  - Error handling and edge cases
+
 ## Project Structure
 
 ```
