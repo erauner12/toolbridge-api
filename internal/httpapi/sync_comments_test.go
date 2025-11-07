@@ -10,7 +10,7 @@ import (
 )
 
 // setupCommentTest creates a note and task for testing comments
-func setupCommentTest(t *testing.T, router http.Handler, sessionID string) (noteUID, taskUID string) {
+func setupCommentTest(t *testing.T, router http.Handler, session TestSession) (noteUID, taskUID string) {
 	t.Helper()
 
 	// Create a note
@@ -24,7 +24,7 @@ func setupCommentTest(t *testing.T, router http.Handler, sessionID string) (note
 				"sync":      map[string]any{"version": float64(1)},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Create a task
 	taskUID = "b2c3d4e5-f6a7-8901-bcde-f12345678901"
@@ -37,7 +37,7 @@ func setupCommentTest(t *testing.T, router http.Handler, sessionID string) (note
 				"sync":      map[string]any{"version": float64(1)},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	return noteUID, taskUID
 }
@@ -59,10 +59,10 @@ func TestPushComments_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// Setup parent entities
-	noteUID, taskUID := setupCommentTest(t, router, sessionID)
+	noteUID, taskUID := setupCommentTest(t, router, session)
 
 	tests := []struct {
 		name       string
@@ -274,7 +274,7 @@ func TestPushComments_Integration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := makeRequestWithSession(t, router, "POST", "/v1/sync/comments/push", tt.body, sessionID)
+			rec := makeRequestWithSession(t, router, "POST", "/v1/sync/comments/push", tt.body, session)
 
 			if rec.Code != tt.wantStatus {
 				t.Errorf("Status = %d, want %d", rec.Code, tt.wantStatus)
@@ -309,7 +309,7 @@ func TestPushCommentsOnDeletedParent_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// Create a note
 	noteUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -322,7 +322,7 @@ func TestPushCommentsOnDeletedParent_Integration(t *testing.T) {
 				"sync":      map[string]any{"version": float64(1)},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Soft delete the note
 	makeRequestWithSession(t, router, "POST", "/v1/sync/notes/push", pushReq{
@@ -338,7 +338,7 @@ func TestPushCommentsOnDeletedParent_Integration(t *testing.T) {
 				},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Try to create a comment on the soft-deleted note (should fail)
 	commentRec := makeRequestWithSession(t, router, "POST", "/v1/sync/comments/push", pushReq{
@@ -354,7 +354,7 @@ func TestPushCommentsOnDeletedParent_Integration(t *testing.T) {
 				},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	var acks []pushAck
 	if err := json.NewDecoder(commentRec.Body).Decode(&acks); err != nil {
@@ -390,7 +390,7 @@ func TestDeleteCommentAfterParentDeleted_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// Create a note
 	noteUID := "b2c3d4e5-f6a7-8901-bcde-f2345678901a"
@@ -404,7 +404,7 @@ func TestDeleteCommentAfterParentDeleted_Integration(t *testing.T) {
 				"sync":      map[string]any{"version": float64(1)},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Create a comment on the note
 	commentUID := "d3e4f5a6-b7c8-9012-cdef-3456789012ab"
@@ -419,7 +419,7 @@ func TestDeleteCommentAfterParentDeleted_Integration(t *testing.T) {
 				"sync":       map[string]any{"version": float64(1)},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Delete the parent note
 	makeRequestWithSession(t, router, "POST", "/v1/sync/notes/push", pushReq{
@@ -435,7 +435,7 @@ func TestDeleteCommentAfterParentDeleted_Integration(t *testing.T) {
 				},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Now delete the comment (should succeed even though parent is deleted)
 	rec := makeRequestWithSession(t, router, "POST", "/v1/sync/comments/push", pushReq{
@@ -453,7 +453,7 @@ func TestDeleteCommentAfterParentDeleted_Integration(t *testing.T) {
 				},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	if rec.Code != 200 {
 		t.Fatalf("Expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -497,10 +497,10 @@ func TestPullComments_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// Setup parent entities
-	noteUID, _ := setupCommentTest(t, router, sessionID)
+	noteUID, _ := setupCommentTest(t, router, session)
 
 	// Push some comments
 	makeRequestWithSession(t, router, "POST", "/v1/sync/comments/push", pushReq{
@@ -522,7 +522,7 @@ func TestPullComments_Integration(t *testing.T) {
 				"sync":       map[string]any{"version": float64(1)},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	tests := []struct {
 		name       string
@@ -563,7 +563,7 @@ func TestPullComments_Integration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := makeRequestWithSession(t, router, "GET", "/v1/sync/comments/pull"+tt.query, nil, sessionID)
+			rec := makeRequestWithSession(t, router, "GET", "/v1/sync/comments/pull"+tt.query, nil, session)
 
 			if rec.Code != tt.wantStatus {
 				t.Errorf("Status = %d, want %d", rec.Code, tt.wantStatus)
@@ -598,10 +598,10 @@ func TestPushPullRoundTrip_Comments_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// Setup parent entities
-	noteUID, _ := setupCommentTest(t, router, sessionID)
+	noteUID, _ := setupCommentTest(t, router, session)
 
 	// Push a comment
 	original := map[string]any{
@@ -619,10 +619,10 @@ func TestPushPullRoundTrip_Comments_Integration(t *testing.T) {
 		},
 	}
 
-	makeRequestWithSession(t, router, "POST", "/v1/sync/comments/push", pushReq{Items: []map[string]any{original}}, sessionID)
+	makeRequestWithSession(t, router, "POST", "/v1/sync/comments/push", pushReq{Items: []map[string]any{original}}, session)
 
 	// Pull it back
-	pullRec := makeRequestWithSession(t, router, "GET", "/v1/sync/comments/pull?limit=100", nil, sessionID)
+	pullRec := makeRequestWithSession(t, router, "GET", "/v1/sync/comments/pull?limit=100", nil, session)
 
 	var pullResp pullResp
 	if err := json.NewDecoder(pullRec.Body).Decode(&pullResp); err != nil {
@@ -679,10 +679,10 @@ func TestSoftDelete_Comments_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// Setup parent entities
-	noteUID, _ := setupCommentTest(t, router, sessionID)
+	noteUID, _ := setupCommentTest(t, router, session)
 
 	// Push a comment
 	makeRequestWithSession(t, router, "POST", "/v1/sync/comments/push", pushReq{
@@ -696,7 +696,7 @@ func TestSoftDelete_Comments_Integration(t *testing.T) {
 				"sync":       map[string]any{"version": float64(1), "isDeleted": false},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Delete the comment
 	makeRequestWithSession(t, router, "POST", "/v1/sync/comments/push", pushReq{
@@ -714,10 +714,10 @@ func TestSoftDelete_Comments_Integration(t *testing.T) {
 				},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Pull and verify it's in deletes array
-	pullRec := makeRequestWithSession(t, router, "GET", "/v1/sync/comments/pull?limit=100", nil, sessionID)
+	pullRec := makeRequestWithSession(t, router, "GET", "/v1/sync/comments/pull?limit=100", nil, session)
 
 	var pullResp pullResp
 	json.NewDecoder(pullRec.Body).Decode(&pullResp)

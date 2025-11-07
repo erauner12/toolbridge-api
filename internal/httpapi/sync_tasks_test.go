@@ -26,7 +26,7 @@ func TestPushTasks_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	tests := []struct {
 		name       string
@@ -128,7 +128,7 @@ func TestPushTasks_Integration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := makeRequestWithSession(t, router, "POST", "/v1/sync/tasks/push", tt.body, sessionID)
+			rec := makeRequestWithSession(t, router, "POST", "/v1/sync/tasks/push", tt.body, session)
 
 			if rec.Code != tt.wantStatus {
 				t.Errorf("Status = %d, want %d", rec.Code, tt.wantStatus)
@@ -164,7 +164,7 @@ func TestPullTasks_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// First, push some tasks
 	makeRequestWithSession(t, router, "POST", "/v1/sync/tasks/push", pushReq{
@@ -182,7 +182,7 @@ func TestPullTasks_Integration(t *testing.T) {
 				"sync":      map[string]any{"version": float64(1)},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	tests := []struct {
 		name       string
@@ -234,7 +234,7 @@ func TestPullTasks_Integration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := makeRequestWithSession(t, router, "GET", "/v1/sync/tasks/pull"+tt.query, nil, sessionID)
+			rec := makeRequestWithSession(t, router, "GET", "/v1/sync/tasks/pull"+tt.query, nil, session)
 
 			if rec.Code != tt.wantStatus {
 				t.Errorf("Status = %d, want %d", rec.Code, tt.wantStatus)
@@ -270,7 +270,7 @@ func TestPushPullRoundTrip_Tasks_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// Push a task
 	original := map[string]any{
@@ -287,10 +287,10 @@ func TestPushPullRoundTrip_Tasks_Integration(t *testing.T) {
 		},
 	}
 
-	makeRequestWithSession(t, router, "POST", "/v1/sync/tasks/push", pushReq{Items: []map[string]any{original}}, sessionID)
+	makeRequestWithSession(t, router, "POST", "/v1/sync/tasks/push", pushReq{Items: []map[string]any{original}}, session)
 
 	// Pull it back
-	pullRec := makeRequestWithSession(t, router, "GET", "/v1/sync/tasks/pull?limit=100", nil, sessionID)
+	pullRec := makeRequestWithSession(t, router, "GET", "/v1/sync/tasks/pull?limit=100", nil, session)
 
 	var pullResp pullResp
 	if err := json.NewDecoder(pullRec.Body).Decode(&pullResp); err != nil {
@@ -342,7 +342,7 @@ func TestSoftDelete_Tasks_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// Push a task
 	makeRequestWithSession(t, router, "POST", "/v1/sync/tasks/push", pushReq{
@@ -354,7 +354,7 @@ func TestSoftDelete_Tasks_Integration(t *testing.T) {
 				"sync":      map[string]any{"version": float64(1), "isDeleted": false},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Delete the task
 	makeRequestWithSession(t, router, "POST", "/v1/sync/tasks/push", pushReq{
@@ -370,10 +370,10 @@ func TestSoftDelete_Tasks_Integration(t *testing.T) {
 				},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Pull and verify it's in deletes array
-	pullRec := makeRequestWithSession(t, router, "GET", "/v1/sync/tasks/pull?limit=100", nil, sessionID)
+	pullRec := makeRequestWithSession(t, router, "GET", "/v1/sync/tasks/pull?limit=100", nil, session)
 
 	var pullResp pullResp
 	json.NewDecoder(pullRec.Body).Decode(&pullResp)

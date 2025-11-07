@@ -45,11 +45,12 @@ func TestRateLimiting_429Response(t *testing.T) {
 
 	var sessionResp struct {
 		ID string `json:"id"`
+		Epoch int    `json:"epoch"`
 	}
 	if err := json.NewDecoder(sessionRec.Body).Decode(&sessionResp); err != nil {
 		t.Fatalf("Failed to decode session response: %v", err)
 	}
-	sessionID := sessionResp.ID
+	session := TestSession{ID: sessionResp.ID, Epoch: sessionResp.Epoch}
 
 	// Make requests until rate limited
 	// Burst is 2, so first 2 should succeed, 3rd should fail with 429
@@ -57,7 +58,7 @@ func TestRateLimiting_429Response(t *testing.T) {
 		req := httptest.NewRequest("POST", "/v1/sync/notes/push", nil)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Debug-Sub", "test-user")
-		req.Header.Set("X-Sync-Session", sessionID)
+		req.Header.Set("X-Sync-Session", session.ID)
 
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
@@ -159,6 +160,7 @@ func TestRateLimiting_HeaderValues(t *testing.T) {
 
 	var sessionResp struct {
 		ID string `json:"id"`
+		Epoch int    `json:"epoch"`
 	}
 	json.NewDecoder(sessionRec.Body).Decode(&sessionResp)
 
@@ -256,6 +258,7 @@ func TestRateLimiting_RemainingDecreases(t *testing.T) {
 
 	var sessionResp struct {
 		ID string `json:"id"`
+		Epoch int    `json:"epoch"`
 	}
 	json.NewDecoder(sessionRec.Body).Decode(&sessionResp)
 
