@@ -10,7 +10,7 @@ import (
 )
 
 // setupChatMessageTest creates a chat for testing chat messages
-func setupChatMessageTest(t *testing.T, router http.Handler, sessionID string) string {
+func setupChatMessageTest(t *testing.T, router http.Handler, session TestSession) string {
 	t.Helper()
 
 	// Create a chat
@@ -24,7 +24,7 @@ func setupChatMessageTest(t *testing.T, router http.Handler, sessionID string) s
 				"sync":      map[string]any{"version": float64(1)},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	return chatUID
 }
@@ -45,10 +45,10 @@ func TestPushChatMessages_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// Setup parent chat
-	chatUID := setupChatMessageTest(t, router, sessionID)
+	chatUID := setupChatMessageTest(t, router, session)
 
 	tests := []struct {
 		name       string
@@ -179,7 +179,7 @@ func TestPushChatMessages_Integration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := makeRequestWithSession(t, router, "POST", "/v1/sync/chat_messages/push", tt.body, sessionID)
+			rec := makeRequestWithSession(t, router, "POST", "/v1/sync/chat_messages/push", tt.body, session)
 
 			if rec.Code != tt.wantStatus {
 				t.Errorf("Status = %d, want %d", rec.Code, tt.wantStatus)
@@ -213,7 +213,7 @@ func TestPushChatMessagesOnDeletedParent_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// Create a chat
 	chatUID := "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
@@ -226,7 +226,7 @@ func TestPushChatMessagesOnDeletedParent_Integration(t *testing.T) {
 				"sync":      map[string]any{"version": float64(1)},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Soft delete the chat
 	makeRequestWithSession(t, router, "POST", "/v1/sync/chats/push", pushReq{
@@ -242,7 +242,7 @@ func TestPushChatMessagesOnDeletedParent_Integration(t *testing.T) {
 				},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Try to create a message on the soft-deleted chat (should fail)
 	messageRec := makeRequestWithSession(t, router, "POST", "/v1/sync/chat_messages/push", pushReq{
@@ -257,7 +257,7 @@ func TestPushChatMessagesOnDeletedParent_Integration(t *testing.T) {
 				},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	var acks []pushAck
 	if err := json.NewDecoder(messageRec.Body).Decode(&acks); err != nil {
@@ -292,7 +292,7 @@ func TestDeleteChatMessageAfterParentDeleted_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// Create a chat
 	chatUID := "b2c3d4e5-f6a7-8901-bcde-f2345678901a"
@@ -306,7 +306,7 @@ func TestDeleteChatMessageAfterParentDeleted_Integration(t *testing.T) {
 				"sync":      map[string]any{"version": float64(1)},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Create a message on the chat
 	messageUID := "d3e4f5a6-b7c8-9012-cdef-3456789012ab"
@@ -320,7 +320,7 @@ func TestDeleteChatMessageAfterParentDeleted_Integration(t *testing.T) {
 				"sync":      map[string]any{"version": float64(1)},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Delete the parent chat
 	makeRequestWithSession(t, router, "POST", "/v1/sync/chats/push", pushReq{
@@ -336,7 +336,7 @@ func TestDeleteChatMessageAfterParentDeleted_Integration(t *testing.T) {
 				},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Now delete the message (should succeed even though parent is deleted)
 	rec := makeRequestWithSession(t, router, "POST", "/v1/sync/chat_messages/push", pushReq{
@@ -353,7 +353,7 @@ func TestDeleteChatMessageAfterParentDeleted_Integration(t *testing.T) {
 				},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	if rec.Code != 200 {
 		t.Fatalf("Expected 200, got %d: %s", rec.Code, rec.Body.String())
@@ -396,10 +396,10 @@ func TestPullChatMessages_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// Setup parent chat
-	chatUID := setupChatMessageTest(t, router, sessionID)
+	chatUID := setupChatMessageTest(t, router, session)
 
 	// Push some messages
 	makeRequestWithSession(t, router, "POST", "/v1/sync/chat_messages/push", pushReq{
@@ -419,7 +419,7 @@ func TestPullChatMessages_Integration(t *testing.T) {
 				"sync":      map[string]any{"version": float64(1)},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	tests := []struct {
 		name       string
@@ -460,7 +460,7 @@ func TestPullChatMessages_Integration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rec := makeRequestWithSession(t, router, "GET", "/v1/sync/chat_messages/pull"+tt.query, nil, sessionID)
+			rec := makeRequestWithSession(t, router, "GET", "/v1/sync/chat_messages/pull"+tt.query, nil, session)
 
 			if rec.Code != tt.wantStatus {
 				t.Errorf("Status = %d, want %d", rec.Code, tt.wantStatus)
@@ -494,10 +494,10 @@ func TestPushPullRoundTrip_ChatMessages_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// Setup parent chat
-	chatUID := setupChatMessageTest(t, router, sessionID)
+	chatUID := setupChatMessageTest(t, router, session)
 
 	// Push a message
 	original := map[string]any{
@@ -514,10 +514,10 @@ func TestPushPullRoundTrip_ChatMessages_Integration(t *testing.T) {
 		},
 	}
 
-	makeRequestWithSession(t, router, "POST", "/v1/sync/chat_messages/push", pushReq{Items: []map[string]any{original}}, sessionID)
+	makeRequestWithSession(t, router, "POST", "/v1/sync/chat_messages/push", pushReq{Items: []map[string]any{original}}, session)
 
 	// Pull it back
-	pullRec := makeRequestWithSession(t, router, "GET", "/v1/sync/chat_messages/pull?limit=100", nil, sessionID)
+	pullRec := makeRequestWithSession(t, router, "GET", "/v1/sync/chat_messages/pull?limit=100", nil, session)
 
 	var pullResp pullResp
 	if err := json.NewDecoder(pullRec.Body).Decode(&pullResp); err != nil {
@@ -570,10 +570,10 @@ func TestSoftDelete_ChatMessages_Integration(t *testing.T) {
 	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
 
 	// Create a session for this test suite
-	sessionID := createTestSession(t, router)
+	session := createTestSession(t, router)
 
 	// Setup parent chat
-	chatUID := setupChatMessageTest(t, router, sessionID)
+	chatUID := setupChatMessageTest(t, router, session)
 
 	// Push a message
 	makeRequestWithSession(t, router, "POST", "/v1/sync/chat_messages/push", pushReq{
@@ -586,7 +586,7 @@ func TestSoftDelete_ChatMessages_Integration(t *testing.T) {
 				"sync":      map[string]any{"version": float64(1), "isDeleted": false},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Delete the message
 	makeRequestWithSession(t, router, "POST", "/v1/sync/chat_messages/push", pushReq{
@@ -603,10 +603,10 @@ func TestSoftDelete_ChatMessages_Integration(t *testing.T) {
 				},
 			},
 		},
-	}, sessionID)
+	}, session)
 
 	// Pull and verify it's in deletes array
-	pullRec := makeRequestWithSession(t, router, "GET", "/v1/sync/chat_messages/pull?limit=100", nil, sessionID)
+	pullRec := makeRequestWithSession(t, router, "GET", "/v1/sync/chat_messages/pull?limit=100", nil, session)
 
 	var pullResp pullResp
 	json.NewDecoder(pullRec.Body).Decode(&pullResp)
