@@ -32,11 +32,12 @@ type JWTCfg struct {
 
 // JWKS caching for Auth0 public keys
 type jwksCache struct {
-	mu         sync.RWMutex
-	keys       map[string]*rsa.PublicKey
-	lastFetch  time.Time
-	cacheTTL   time.Duration
+	mu          sync.RWMutex
+	keys        map[string]*rsa.PublicKey
+	lastFetch   time.Time
+	cacheTTL    time.Duration
 	auth0Domain string
+	httpClient  *http.Client // HTTP client with timeout for JWKS fetching
 }
 
 var globalJWKSCache *jwksCache
@@ -65,7 +66,7 @@ func (c *jwksCache) fetchJWKS() error {
 	}
 
 	url := fmt.Sprintf("https://%s/.well-known/jwks.json", c.auth0Domain)
-	resp, err := http.Get(url)
+	resp, err := c.httpClient.Get(url)
 	if err != nil {
 		return fmt.Errorf("failed to fetch JWKS: %w", err)
 	}
@@ -182,6 +183,9 @@ func Middleware(db *pgxpool.Pool, cfg JWTCfg) func(http.Handler) http.Handler {
 			keys:        make(map[string]*rsa.PublicKey),
 			cacheTTL:    1 * time.Hour,
 			auth0Domain: cfg.Auth0Domain,
+			httpClient: &http.Client{
+				Timeout: 10 * time.Second, // Prevent hanging on slow/stalled JWKS endpoint
+			},
 		}
 
 		// Pre-fetch JWKS on startup
