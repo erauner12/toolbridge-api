@@ -95,35 +95,19 @@ func AuthInterceptor(db *pgxpool.Pool, cfg auth.JWTCfg) grpc.UnaryServerIntercep
 
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 
-		// 4. Validate token (reuse JWT validation logic)
-		// This is a simplified version - in production, reuse auth.Middleware logic
-		// or extract token validation into a shared function
-
-		// For now, we'll extract the subject claim and use it as userID
-		// TODO: Implement full JWT validation (HS256 and RS256 via JWKS)
-		// This would require extracting the validation logic from auth/jwt.go
-		// into a reusable function that both HTTP and gRPC can call
-
-		// Placeholder: In a real implementation, validate the token here
-		// For this PR, we'll add a TODO and assume validation happens
-		logger.Warn().Msg("JWT validation not yet implemented - using placeholder")
-
-		// TODO: Implement JWT validation
-		// claims, err := validateJWT(tokenString, cfg)
-		// if err != nil {
-		//     return nil, status.Error(codes.Unauthenticated, "invalid token")
-		// }
-		// subject := claims["sub"].(string)
-
-		// Placeholder subject extraction (replace with actual validation)
-		subject := "placeholder-user-id"
+		// 4. Validate token using shared validation logic (supports RS256 and HS256)
+		subject, err := auth.ValidateToken(tokenString, cfg)
+		if err != nil {
+			logger.Warn().Err(err).Msg("jwt validation failed")
+			return nil, status.Error(codes.Unauthenticated, "invalid token")
+		}
 
 		// 5. Find or create app_user record
 		var userID string
-		err := db.QueryRow(ctx,
-			`INSERT INTO app_user(subject, created_at, updated_at)
-			 VALUES ($1, NOW(), NOW())
-			 ON CONFLICT (subject) DO UPDATE SET updated_at = NOW()
+		err = db.QueryRow(ctx,
+			`INSERT INTO app_user(sub, created_at)
+			 VALUES ($1, NOW())
+			 ON CONFLICT (sub) DO UPDATE SET sub = excluded.sub
 			 RETURNING id`,
 			subject,
 		).Scan(&userID)
