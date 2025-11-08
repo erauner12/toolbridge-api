@@ -69,15 +69,19 @@ func main() {
 		Auth0Audience: auth0Audience,
 	}
 
-	// Security validation: refuse to start in production with default/missing JWT secret
-	// UNLESS Auth0 is configured (which uses RS256 with JWKS, not HS256 secret)
-	if !isDevMode && (auth0Domain == "" || auth0Audience == "") {
+	// Security validation: Always require a strong HS256 secret in production mode
+	// This provides defense-in-depth even when Auth0 is configured, since the middleware
+	// still accepts HS256 tokens. Without this check, an attacker could forge HS256 tokens
+	// using the default secret and bypass Auth0 validation entirely.
+	if !isDevMode {
 		if jwtSecret == "" || jwtSecret == "dev-secret-change-in-production" {
 			log.Fatal().
 				Str("secret", jwtSecret).
-				Msg("FATAL: Cannot start in production mode with default or missing JWT_HS256_SECRET and no Auth0 config. " +
-					"Either set AUTH0_DOMAIN + AUTH0_AUDIENCE for RS256 validation, " +
-					"or set JWT_HS256_SECRET to a secure random value (e.g., openssl rand -base64 32)")
+				Bool("auth0_enabled", auth0Domain != "" && auth0Audience != "").
+				Msg("FATAL: Cannot start in production mode with default or missing JWT_HS256_SECRET. " +
+					"Even with Auth0 configured, a strong HS256 secret is required for defense-in-depth " +
+					"since the middleware still accepts HS256 tokens. " +
+					"Set JWT_HS256_SECRET to a secure random value (e.g., openssl rand -base64 32)")
 		}
 	}
 
