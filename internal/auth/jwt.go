@@ -132,19 +132,35 @@ func (c *jwksCache) fetchJWKS() error {
 
 // getPublicKey retrieves a cached public key by kid (key ID)
 func (c *jwksCache) getPublicKey(kid string) (*rsa.PublicKey, error) {
+	// Check if cache has expired (before checking if key exists)
+	// This ensures we refresh even when the requested key is present
+	c.mu.RLock()
+	cacheExpired := time.Since(c.lastFetch) >= c.cacheTTL
+	c.mu.RUnlock()
+
+	if cacheExpired {
+		// Cache expired - refresh JWKS to detect key rotations/revocations
+		if err := c.fetchJWKS(); err != nil {
+			// Log error but don't fail - continue with stale cache as fallback
+			log.Warn().Err(err).Msg("failed to refresh expired JWKS cache, using stale keys")
+		}
+	}
+
 	c.mu.RLock()
 	key, ok := c.keys[kid]
 	c.mu.RUnlock()
 
 	if !ok {
-		// Try refreshing cache if key not found
-		if err := c.fetchJWKS(); err != nil {
-			return nil, err
-		}
+		// Key not found in cache - try refreshing if we haven't just done so
+		if !cacheExpired {
+			if err := c.fetchJWKS(); err != nil {
+				return nil, err
+			}
 
-		c.mu.RLock()
-		key, ok = c.keys[kid]
-		c.mu.RUnlock()
+			c.mu.RLock()
+			key, ok = c.keys[kid]
+			c.mu.RUnlock()
+		}
 
 		if !ok {
 			return nil, fmt.Errorf("key ID %s not found in JWKS", kid)
