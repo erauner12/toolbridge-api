@@ -1,8 +1,13 @@
-# gRPC Migration Implementation Guide - Phase 1
+# gRPC Migration Implementation Guide
 
-This document tracks the implementation of Phase 1 of the gRPC migration, establishing gRPC transport in parallel with the existing REST API.
+**Status**: Phase 2 Complete ✅
+**Last Updated**: 2025-11-09
 
-## ✅ Completed
+This document tracks the gRPC migration implementation, establishing gRPC as a parallel transport alongside the existing REST API.
+
+---
+
+## ✅ Phase 1: Foundation (Complete)
 
 ### 1. Protocol Buffers Definition
 - **File**: `proto/sync/v1/sync.proto`
@@ -10,7 +15,10 @@ This document tracks the implementation of Phase 1 of the gRPC migration, establ
 - **Services**:
   - `SyncService` - Core service (sessions, info, wipe, state)
   - `NoteSyncService`, `TaskSyncService`, `CommentSyncService`, `ChatSyncService`, `ChatMessageSyncService`
-- **Messages**: Request/Response types using `google.protobuf.Struct` for Phase 1 flexibility
+- **Messages**: Request/Response types using `google.protobuf.Struct` for flexibility
+- **Generated Code**:
+  - `gen/go/sync/v1/sync.pb.go` - Message types
+  - `gen/go/sync/v1/sync_grpc.pb.go` - Service interfaces
 
 ### 2. Shared Session Store
 - **Files**:
@@ -19,171 +27,104 @@ This document tracks the implementation of Phase 1 of the gRPC migration, establ
   - `internal/httpapi/session_required.go` - Updated to use shared store
 - **What**: Refactored session management out of HTTP package so both HTTP and gRPC can share it
 - **Interface**: `CreateSession`, `GetSession`, `DeleteSession`, `DeleteUserSessions`
+- **Benefit**: Both transports share session state
 
-### 3. Service Layer (Business Logic Extraction)
-- **Package**: `internal/service/syncservice/`
-- **Implemented**:
-  - `notes_service.go` - Extracted notes push/pull logic
-    - `PushNoteItem(ctx, tx, userID, item)` - LWW upsert for single note
-    - `PullNotes(ctx, userID, cursor, limit)` - Cursor-based pagination
-- **Pattern**: Service layer is transport-agnostic, returns simple structs (`PushAck`, `PullResponse`)
-
-### 4. HTTP Handlers Refactored
-- **File**: `internal/httpapi/sync_notes.go`
-- **What**: HTTP handlers now call service layer instead of embedding business logic
-- **Benefit**: Business logic can be reused by gRPC handlers
-
-### 5. gRPC Server Implementation (Partial)
-- **File**: `internal/grpcapi/server.go`
-- **Implemented**:
-  - `NoteSyncService.Push` - Demonstrates pattern for converting proto → service → proto
-  - `NoteSyncService.Pull` - Demonstrates cursor handling and proto conversion
-- **Pattern Established**:
-  ```go
-  1. Extract userID from context (set by auth interceptor)
-  2. Begin transaction (for push)
-  3. Loop through items, call service layer
-  4. Convert service response to proto
-  5. Commit transaction
-  6. Return proto response
-  ```
-
-### 6. Build Infrastructure
+### 3. Build Infrastructure
 - **Files**:
   - `scripts/generate_proto.sh` - Script to generate Go protobuf stubs
   - `proto/README.md` - Documentation for installing protoc and generating code
-- **Next Step**: Install `protoc` and run `./scripts/generate_proto.sh` to generate stubs
+- **Commands**:
+  ```bash
+  brew install protobuf
+  go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+  ./scripts/generate_proto.sh
+  ```
 
 ---
 
-## 🚧 TODO: Complete Backend Implementation
+## ✅ Phase 2: Complete Implementation (Complete)
 
-### 7. Generate Protobuf Stubs
-```bash
-# Install prerequisites (macOS)
-brew install protobuf
-go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+**Delivered in PR #20**: Complete gRPC server with service layer refactoring
 
-# Generate code
-./scripts/generate_proto.sh
-```
+### 4. Service Layer (Business Logic Extraction)
+- **Package**: `internal/service/syncservice/`
+- **Implemented**:
+  - `notes_service.go` - Notes push/pull logic
+  - `tasks_service.go` - Tasks push/pull logic
+  - `comments_service.go` - Comments push/pull logic (with parent validation)
+  - `chats_service.go` - Chats push/pull logic
+  - `chat_messages_service.go` - Chat messages push/pull logic (with parent validation)
+- **Pattern**:
+  - `PushXItem(ctx, tx, userID, item)` - LWW upsert for single item
+  - `PullXs(ctx, userID, cursor, limit)` - Cursor-based pagination
+- **Benefit**: Transport-agnostic business logic, returns simple structs (`PushAck`, `PullResponse`)
 
-This generates:
-- `gen/go/sync/v1/sync.pb.go` - Message types
-- `gen/go/sync/v1/sync_grpc.pb.go` - Service interfaces
+### 5. HTTP Handlers Refactored
+**All HTTP handlers now use service layer:**
+- `internal/httpapi/sync_notes.go` - Calls `NoteSvc.PushNoteItem()`, `NoteSvc.PullNotes()`
+- `internal/httpapi/sync_tasks.go` - Calls `TaskSvc.PushTaskItem()`, `TaskSvc.PullTasks()`
+- `internal/httpapi/sync_comments.go` - Calls `CommentSvc.PushCommentItem()`, `CommentSvc.PullComments()`
+- `internal/httpapi/sync_chats.go` - Calls `ChatSvc.PushChatItem()`, `ChatSvc.PullChats()`
+- `internal/httpapi/sync_chat_messages.go` - Calls `ChatMessageSvc.PushChatMessageItem()`, `ChatMessageSvc.PullChatMessages()`
 
-### 8. Create Remaining Service Layer Files
+**Result**: Zero business logic duplication between HTTP and gRPC
 
-Follow the pattern from `notes_service.go` to create:
+### 6. gRPC Interceptors
+**File**: `internal/grpcapi/interceptors.go`
 
-#### `internal/service/syncservice/tasks_service.go`
+**Implemented interceptors** (mirror HTTP middleware):
+- `CorrelationIDInterceptor()` - Generates/reads correlation ID from metadata
+- `AuthInterceptor()` - Validates JWT tokens (supports both RS256 and HS256)
+  - DevMode support via `x-debug-sub` header
+  - Creates/finds `app_user` record and sets `userID` in context
+- `SessionInterceptor()` - Validates `X-Sync-Session` header
+  - Checks session exists and belongs to authenticated user
+  - Exempt methods: `GetServerInfo`, `BeginSession`
+- `EpochInterceptor()` - Validates `X-Sync-Epoch` header
+  - Detects epoch mismatches and triggers client reset
+  - Exempt methods: `GetServerInfo`, `BeginSession`, `EndSession`, `GetSyncState`, `WipeAccount`
+- `RecoveryInterceptor()` - Panic recovery
+- `LoggingInterceptor()` - Request logging
+- `ChainUnaryServer()` - Helper to chain multiple interceptors
+
+**Key Fix**: DevMode auth goes through same `app_user` lookup as JWT to ensure proper UUID conversion
+
+### 7. gRPC Server Implementation
+**File**: `internal/grpcapi/server.go`
+
+**Core SyncService RPCs** (all implemented):
+- `GetServerInfo` - Returns server capabilities, rate limits, entity configs
+- `BeginSession` - Creates session with epoch coordination
+- `EndSession` - Terminates session
+- `WipeAccount` - Deletes all user data and increments epoch
+- `GetSyncState` - Returns current epoch and sync metadata
+
+**Entity Service RPCs** (all implemented):
+- `NoteSyncService.Push/Pull` - Push/pull notes
+- `TaskSyncService.Push/Pull` - Push/pull tasks
+- `CommentSyncService.Push/Pull` - Push/pull comments
+- `ChatSyncService.Push/Pull` - Push/pull chats
+- `ChatMessageSyncService.Push/Pull` - Push/pull chat messages
+
+**Pattern**:
 ```go
-package syncservice
-
-type TaskService struct {
-    DB *pgxpool.Pool
-}
-
-func NewTaskService(db *pgxpool.Pool) *TaskService {
-    return &TaskService{DB: db}
-}
-
-func (s *TaskService) PushTaskItem(ctx context.Context, tx pgx.Tx, userID string, item map[string]any) PushAck {
-    // Copy logic from internal/httpapi/sync_tasks.go PushTasks loop body
-}
-
-func (s *TaskService) PullTasks(ctx context.Context, userID string, cursor syncx.Cursor, limit int) (*PullResponse, error) {
-    // Copy logic from internal/httpapi/sync_tasks.go PullTasks
-}
+1. Extract userID from context (set by auth interceptor)
+2. Begin transaction (for push operations)
+3. Loop through items, call service layer
+4. Convert service response to proto
+5. Commit transaction
+6. Return proto response
 ```
 
-#### `internal/service/syncservice/comments_service.go`
-```go
-type CommentService struct {
-    DB *pgxpool.Pool
-}
+### 8. Server Setup and Wiring
+**File**: `cmd/server/main.go`
 
-func (s *CommentService) PushCommentItem(ctx context.Context, tx pgx.Tx, userID string, item map[string]any) PushAck {
-    // IMPORTANT: Include parent validation logic from sync_comments.go
-    // Comments require checking that parent (note/task) exists
-}
+**Build tags**: gRPC server conditionally compiled with `-tags grpc`
+- `cmd/server/grpc_setup.go` - gRPC server setup (when tag present)
+- `cmd/server/grpc_noop.go` - No-op implementation (when tag absent)
 
-func (s *CommentService) PullComments(ctx context.Context, userID string, cursor syncx.Cursor, limit int) (*PullResponse, error) {
-    // ...
-}
-```
-
-#### `internal/service/syncservice/chats_service.go`
-```go
-type ChatService struct {
-    DB *pgxpool.Pool
-}
-
-func (s *ChatService) PushChatItem(ctx context.Context, tx pgx.Tx, userID string, item map[string]any) PushAck {
-    // ...
-}
-
-func (s *ChatService) PullChats(ctx context.Context, userID string, cursor syncx.Cursor, limit int) (*PullResponse, error) {
-    // ...
-}
-```
-
-#### `internal/service/syncservice/chat_messages_service.go`
-```go
-type ChatMessageService struct {
-    DB *pgxpool.Pool
-}
-
-func (s *ChatMessageService) PushChatMessageItem(ctx context.Context, tx pgx.Tx, userID string, item map[string]any) PushAck {
-    // IMPORTANT: Include parent chat validation from sync_chat_messages.go
-}
-
-func (s *ChatMessageService) PullChatMessages(ctx context.Context, userID string, cursor syncx.Cursor, limit int) (*PullResponse, error) {
-    // ...
-}
-```
-
-### 9. Update HTTP Handlers to Use Services
-
-For each entity (`sync_tasks.go`, `sync_comments.go`, `sync_chats.go`, `sync_chat_messages.go`):
-
-```go
-// Before (inline logic):
-for _, item := range req.Items {
-    ext, err := syncx.ExtractCommon(item)
-    // ... 50 lines of SQL and logic ...
-}
-
-// After (call service):
-for _, item := range req.Items {
-    svcAck := s.TaskSvc.PushTaskItem(ctx, tx, userID, item)
-    acks = append(acks, pushAck{
-        UID:       svcAck.UID,
-        Version:   svcAck.Version,
-        UpdatedAt: svcAck.UpdatedAt,
-        Error:     svcAck.Error,
-    })
-}
-```
-
-### 10. Wire Services in `main.go` and `router.go`
-
-**`internal/httpapi/router.go`:**
-```go
-type Server struct {
-    DB              *pgxpool.Pool
-    RateLimitConfig RateLimitInfo
-    // Services
-    NoteSvc        *syncservice.NoteService
-    TaskSvc        *syncservice.TaskService
-    CommentSvc     *syncservice.CommentService
-    ChatSvc        *syncservice.ChatService
-    ChatMessageSvc *syncservice.ChatMessageService
-}
-```
-
-**`cmd/server/main.go`:**
+**Service initialization**:
 ```go
 srv := &httpapi.Server{
     DB:              pool,
@@ -196,312 +137,231 @@ srv := &httpapi.Server{
 }
 ```
 
-### 11. Create gRPC Interceptors
-
-**File**: `internal/grpcapi/interceptors.go`
-
+**gRPC server** (runs on `:8082` when `-tags grpc` enabled):
 ```go
-package grpcapi
-
-import (
-    "context"
-    "github.com/erauner12/toolbridge-api/internal/auth"
-    "github.com/erauner12/toolbridge-api/internal/session"
-    "github.com/google/uuid"
-    "google.golang.org/grpc"
-    "google.golang.org/grpc/codes"
-    "google.golang.org/grpc/metadata"
-    "google.golang.org/grpc/status"
+grpcServer := grpc.NewServer(
+    grpc.ChainUnaryInterceptor(
+        grpcapi.RecoveryInterceptor(),
+        grpcapi.CorrelationIDInterceptor(),
+        grpcapi.AuthInterceptor(pool, jwtCfg),
+        grpcapi.SessionInterceptor(),
+        grpcapi.EpochInterceptor(pool),
+        grpcapi.LoggingInterceptor(),
+    ),
 )
-
-// AuthInterceptor validates JWT and sets userID in context (mirrors auth.Middleware)
-func AuthInterceptor(db *pgxpool.Pool, cfg auth.JWTCfg) grpc.UnaryServerInterceptor {
-    return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-        // 1. Read "authorization" from metadata
-        md, ok := metadata.FromIncomingContext(ctx)
-        if !ok {
-            return nil, status.Error(codes.Unauthenticated, "missing metadata")
-        }
-
-        authHeaders := md.Get("authorization")
-        if len(authHeaders) == 0 {
-            // Check if DevMode allows X-Debug-Sub
-            debugSub := md.Get("x-debug-sub")
-            if cfg.DevMode && len(debugSub) > 0 {
-                // Allow debug mode (same as HTTP middleware)
-                userID := debugSub[0]
-                ctx = context.WithValue(ctx, auth.CtxUserID, userID)
-                return handler(ctx, req)
-            }
-            return nil, status.Error(codes.Unauthenticated, "missing authorization header")
-        }
-
-        // 2. Parse and validate token (reuse auth/jwt.go logic)
-        // ... (extract token, validate using cfg.HS256Secret or Auth0 JWKS) ...
-
-        // 3. Find or create app_user (reuse logic from auth.Middleware)
-        // ... (query/insert app_user table) ...
-
-        // 4. Add userID to context
-        ctx = context.WithValue(ctx, auth.CtxUserID, userID)
-        return handler(ctx, req)
-    }
-}
-
-// SessionInterceptor validates X-Sync-Session header (mirrors SessionRequired)
-func SessionInterceptor() grpc.UnaryServerInterceptor {
-    sessionStore := session.GetStore()
-
-    return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-        // Skip session check for certain RPCs (BeginSession, GetServerInfo, etc.)
-        if isSessionExempt(info.FullMethod) {
-            return handler(ctx, req)
-        }
-
-        // 1. Read X-Sync-Session from metadata
-        md, _ := metadata.FromIncomingContext(ctx)
-        sessionHeaders := md.Get("x-sync-session")
-        if len(sessionHeaders) == 0 {
-            return nil, status.Error(codes.FailedPrecondition, "X-Sync-Session header required")
-        }
-        sessionID := sessionHeaders[0]
-
-        // 2. Validate session
-        sess, ok := sessionStore.GetSession(sessionID)
-        if !ok {
-            return nil, status.Error(codes.FailedPrecondition, "Invalid or expired session")
-        }
-
-        // 3. Verify session belongs to authenticated user
-        userID := auth.UserID(ctx)
-        if sess.UserID != userID {
-            return nil, status.Error(codes.PermissionDenied, "Session does not belong to user")
-        }
-
-        return handler(ctx, req)
-    }
-}
-
-// EpochInterceptor validates X-Sync-Epoch (mirrors EpochRequired)
-func EpochInterceptor(db *pgxpool.Pool) grpc.UnaryServerInterceptor {
-    return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-        // Skip epoch check for certain RPCs
-        if isEpochExempt(info.FullMethod) {
-            return handler(ctx, req)
-        }
-
-        // 1. Read X-Sync-Epoch from metadata
-        md, _ := metadata.FromIncomingContext(ctx)
-        epochHeaders := md.Get("x-sync-epoch")
-        if len(epochHeaders) == 0 {
-            return nil, status.Error(codes.FailedPrecondition, "X-Sync-Epoch header required")
-        }
-        clientEpoch, _ := strconv.Atoi(epochHeaders[0])
-
-        // 2. Query server epoch
-        userID := auth.UserID(ctx)
-        var serverEpoch int
-        err := db.QueryRow(ctx, `SELECT epoch FROM owner_state WHERE owner_id = $1`, userID).Scan(&serverEpoch)
-        if err != nil {
-            return nil, status.Error(codes.Internal, "Failed to load epoch")
-        }
-
-        // 3. Check mismatch
-        if clientEpoch != serverEpoch {
-            // Return error with epoch in trailer (gRPC equivalent of response header)
-            // Client must detect this and trigger reset
-            return nil, status.Error(codes.FailedPrecondition, fmt.Sprintf("Epoch mismatch: server=%d", serverEpoch))
-        }
-
-        return handler(ctx, req)
-    }
-}
-
-// CorrelationIDInterceptor generates or reads correlation ID (mirrors CorrelationMiddleware)
-func CorrelationIDInterceptor() grpc.UnaryServerInterceptor {
-    return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-        md, _ := metadata.FromIncomingContext(ctx)
-        corrHeaders := md.Get("x-correlation-id")
-
-        var corrID string
-        if len(corrHeaders) > 0 {
-            corrID = corrHeaders[0]
-        } else {
-            corrID = uuid.New().String()
-        }
-
-        // Add to context for logging
-        ctx = context.WithValue(ctx, "correlationId", corrID)
-
-        // Add to zerolog context
-        logger := log.With().Str("correlation_id", corrID).Logger()
-        ctx = logger.WithContext(ctx)
-
-        return handler(ctx, req)
-    }
-}
-
-// Helper functions
-func isSessionExempt(method string) bool {
-    exempt := []string{
-        "/toolbridge.sync.v1.SyncService/GetServerInfo",
-        "/toolbridge.sync.v1.SyncService/BeginSession",
-    }
-    for _, e := range exempt {
-        if method == e {
-            return true
-        }
-    }
-    return false
-}
-
-func isEpochExempt(method string) bool {
-    // Same as session exempt, plus EndSession
-    return isSessionExempt(method) || method == "/toolbridge.sync.v1.SyncService/EndSession"
-}
 ```
 
-### 12. Complete gRPC Server Implementation
+**Makefile targets**:
+- `make dev` - HTTP only (port 8081)
+- `make dev-grpc` - HTTP + gRPC (ports 8081 + 8082)
 
-**`internal/grpcapi/server.go`** - Implement remaining services:
+### 9. Test Infrastructure Updates
+**Fixed all HTTP integration tests** to use service layer:
+- `internal/httpapi/sync_tasks_test.go` - Added `TaskSvc` initialization
+- `internal/httpapi/sync_comments_test.go` - Added `NoteSvc`, `TaskSvc`, `CommentSvc`
+- `internal/httpapi/sync_chats_test.go` - Added `ChatSvc`
+- `internal/httpapi/sync_chat_messages_test.go` - Added `ChatSvc`, `ChatMessageSvc`
 
-```go
-// Add to Server struct
-type Server struct {
-    // ... existing ...
-    TaskSvc        *syncservice.TaskService
-    CommentSvc     *syncservice.CommentService
-    ChatSvc        *syncservice.ChatService
-    ChatMessageSvc *syncservice.ChatMessageService
-}
-
-// TaskSyncService.Push (copy pattern from NoteSyncService.Push)
-func (s *Server) Push(ctx context.Context, req *syncv1.PushRequest) (*syncv1.PushResponse, error) {
-    // Same pattern as notes, but call s.TaskSvc.PushTaskItem
-}
-
-// TaskSyncService.Pull (copy pattern from NoteSyncService.Pull)
-func (s *Server) Pull(ctx context.Context, req *syncv1.PullRequest) (*syncv1.PullResponse, error) {
-    // Same pattern as notes, but call s.TaskSvc.PullTasks
-}
-
-// Repeat for CommentSyncService, ChatSyncService, ChatMessageSyncService
-```
-
-### 13. Update `main.go` to Start gRPC Server
-
-**`cmd/server/main.go`:**
-
-```go
-import (
-    "net"
-    "github.com/erauner12/toolbridge-api/internal/grpcapi"
-    syncv1 "github.com/erauner12/toolbridge-api/gen/go/sync/v1"
-    "google.golang.org/grpc"
-    "google.golang.org/grpc/reflection"
-)
-
-func main() {
-    // ... existing HTTP setup ...
-
-    // === NEW gRPC SERVER SETUP ===
-    grpcAddr := env("GRPC_ADDR", ":8082")
-    lis, err := net.Listen("tcp", grpcAddr)
-    if err != nil {
-        log.Fatal().Err(err).Msg("failed to listen for gRPC")
-    }
-
-    // Chain interceptors
-    grpcServer := grpc.NewServer(
-        grpc.ChainUnaryInterceptor(
-            grpcapi.CorrelationIDInterceptor(),
-            grpcapi.AuthInterceptor(pool, jwtCfg),
-            grpcapi.SessionInterceptor(),
-            grpcapi.EpochInterceptor(pool),
-        ),
-    )
-
-    // Create and register gRPC implementation
-    grpcApiServer := grpcapi.NewServer(
-        pool,
-        srv.NoteSvc,
-        // TODO: Pass other services
-    )
-    syncv1.RegisterSyncServiceServer(grpcServer, grpcApiServer)
-    syncv1.RegisterNoteSyncServiceServer(grpcServer, grpcApiServer)
-    syncv1.RegisterTaskSyncServiceServer(grpcServer, grpcApiServer)
-    syncv1.RegisterCommentSyncServiceServer(grpcServer, grpcApiServer)
-    syncv1.RegisterChatSyncServiceServer(grpcServer, grpcApiServer)
-    syncv1.RegisterChatMessageSyncServiceServer(grpcServer, grpcApiServer)
-
-    reflection.Register(grpcServer) // Enable gRPC reflection for testing
-
-    // Start gRPC server in goroutine
-    go func() {
-        log.Info().Str("addr", grpcAddr).Msg("starting gRPC server")
-        if err := grpcServer.Serve(lis); err != nil {
-            log.Fatal().Err(err).Msg("gRPC server failed")
-        }
-    }()
-
-    // === GRACEFUL SHUTDOWN ===
-    // ... existing signal handling ...
-    <-sigChan
-    log.Info().Msg("shutting down gracefully...")
-
-    // Stop gRPC server
-    go func() {
-        grpcServer.GracefulStop()
-    }()
-
-    // Stop HTTP server
-    // ... existing httpServer.Shutdown() ...
-}
-```
+**Result**: All 31 integration tests passing
 
 ---
 
-## 🎯 Testing Backend
+## ✅ Flutter Client (Complete)
 
-Once backend is complete:
+**Delivered in PR #149**: Complete Flutter gRPC client implementation
 
-```bash
-# Start server
-DATABASE_URL=... ENV=dev go run cmd/server/main.go
+### Flutter gRPC Client
+**File**: `lib/services/sync/grpc_sync_api.dart`
 
-# Test with grpcurl (requires reflection)
-grpcurl -plaintext localhost:8082 list
-grpcurl -plaintext localhost:8082 list toolbridge.sync.v1.SyncService
-grpcurl -plaintext -d '{}' localhost:8082 toolbridge.sync.v1.SyncService/GetServerInfo
-```
+**Implemented**:
+- Full `SyncApi` interface implementation using gRPC
+- All core operations: `getServerInfo`, `beginSession`, `endSession`, `wipeAccount`, `getSyncState`
+- All entity operations: Push/Pull for notes, tasks, comments, chats, chat_messages
+- Proper metadata handling (`x-correlation-id`, `x-sync-session`, `x-sync-epoch`)
+- DevMode authentication support (`x-debug-sub` header)
+- Connection management and error handling
+
+### Settings Integration
+**File**: `lib/page/setting/remote_sync_setting.dart`
+
+**Added**:
+- Transport selection toggle (HTTP/gRPC)
+- Persisted user preference in settings
+- UI for switching between transports
+
+### Manual Testing
+**File**: `test/manual/test_grpc_connectivity.dart`
+
+**Test coverage**:
+- Session management (begin/end)
+- Push operations (all entities)
+- Pull operations (all entities)
+- Epoch validation
+- Error handling
+
+**Verification**: All tests passing with proper UUID handling
 
 ---
 
-## 📱 Next: Flutter Client Implementation
+## 🚧 Phase 3: Integration Testing (Next)
 
-See `FLUTTER_GRPC_SETUP.md` for:
-1. Generating Dart protobuf stubs
-2. Implementing `GrpcSyncApi`
-3. Adding settings toggle
-4. Updating `remote_sync_provider.dart`
+**Goal**: Automated gRPC integration tests for CI/CD
+
+### Scope
+- **File**: `internal/grpcapi/server_test.go`
+- **Test coverage**:
+  - ✅ Auth interceptor (JWT + DevMode)
+  - ✅ Session interceptor (validation + exemptions)
+  - ✅ Epoch interceptor (mismatch detection + exemptions)
+  - ✅ Core RPCs (GetServerInfo, BeginSession, EndSession, WipeAccount, GetSyncState)
+  - ✅ Entity RPCs (Push/Pull for all 5 entities)
+  - ✅ Error scenarios (auth failures, session errors, epoch mismatches)
+  - ✅ Edge cases (concurrent requests, transaction rollbacks)
+
+### Test Pattern
+Follow existing HTTP test patterns:
+```go
+func TestGrpcNotePush(t *testing.T) {
+    pool := setupTestDB(t)
+    defer pool.Close()
+
+    // Create gRPC server with test DB
+    grpcServer := setupTestGrpcServer(pool)
+
+    // Create gRPC client
+    conn, client := setupTestGrpcClient(grpcServer)
+    defer conn.Close()
+
+    // Test push operation
+    resp, err := client.Push(ctx, &syncv1.PushRequest{...})
+    assert.NoError(t, err)
+    assert.Len(t, resp.Acks, 1)
+}
+```
+
+### CI Integration
+- Add gRPC tests to `make test-all`
+- Run gRPC tests in GitHub Actions
+- Ensure tests run with `-tags grpc` build flag
+
+---
+
+## 🎯 Current Status
+
+### What's Working
+✅ HTTP API (port 8081)
+✅ gRPC API (port 8082)
+✅ Shared session store
+✅ Shared service layer
+✅ DevMode auth for both transports
+✅ All 31 HTTP integration tests passing
+✅ Flutter client with gRPC support
+✅ Manual testing validated
+
+### What's Next
+🚧 Automated gRPC integration tests
+⏸️ Production deployment (after tests)
+⏸️ Performance benchmarking
+⏸️ gRPC Gateway (optional, for REST exposure)
 
 ---
 
 ## 🔑 Key Design Decisions
 
-1. **Service Layer Pattern**: Business logic extracted to `syncservice` package
-   - Keeps HTTP and gRPC handlers thin (just transport concerns)
-   - Makes testing easier (test service layer directly)
-   - Enables future transports (WebSocket, etc.)
+### 1. Service Layer Pattern
+**Decision**: Extract business logic to `syncservice` package
+**Benefit**:
+- HTTP and gRPC handlers stay thin (transport concerns only)
+- Zero business logic duplication
+- Easier testing (test service layer directly)
+- Enables future transports (WebSocket, etc.)
 
-2. **Shared Session Store**: In-memory store accessible to both transports
-   - Alternative: Could use Redis for multi-instance deployment
-   - Current design sufficient for single-instance Phase 1
+### 2. Shared Session Store
+**Decision**: In-memory store accessible to both transports
+**Benefit**:
+- Session continuity across transports
+- Simpler than external store (Redis) for single-instance deployment
+**Future**: Could migrate to Redis for multi-instance scalability
 
-3. **Proto `Struct` Usage**: Phase 1 uses `google.protobuf.Struct` for flexibility
-   - Matches existing `List<Map<String, dynamic>>` pattern
-   - Phase 2 can migrate to typed messages for better performance
+### 3. Proto `Struct` Usage
+**Decision**: Use `google.protobuf.Struct` for entity payloads
+**Benefit**:
+- Matches existing `List<Map<String, dynamic>>` pattern
+- Flexibility for schema evolution
+- Faster initial implementation
+**Future**: Could migrate to typed messages for better performance/validation
 
-4. **Interceptor Chain**: gRPC interceptors mirror HTTP middleware stack
-   - Ensures consistent auth/session/epoch behavior
-   - Reuses validation logic from `auth` and `session` packages
+### 4. Interceptor Chain
+**Decision**: gRPC interceptors mirror HTTP middleware stack
+**Benefit**:
+- Consistent auth/session/epoch behavior across transports
+- Reuses validation logic from `auth` and `session` packages
+- Same security guarantees for both APIs
+
+### 5. DevMode Authentication
+**Decision**: Both HTTP and gRPC support `x-debug-sub` header in dev mode
+**Implementation**: Both paths go through `app_user` table lookup for UUID conversion
+**Benefit**: Consistent testing experience across transports
+
+### 6. Build Tags
+**Decision**: gRPC server conditionally compiled with `-tags grpc`
+**Benefit**:
+- Can run HTTP-only or HTTP+gRPC
+- Reduces binary size when gRPC not needed
+- Easier local development
+
+---
+
+## 📚 Additional Resources
+
+- **Proto files**: `proto/sync/v1/sync.proto`
+- **Generated stubs**: `gen/go/sync/v1/`
+- **Service layer**: `internal/service/syncservice/`
+- **gRPC server**: `internal/grpcapi/server.go`
+- **gRPC interceptors**: `internal/grpcapi/interceptors.go`
+- **Flutter client**: `lib/services/sync/grpc_sync_api.dart`
+- **Flutter tests**: `test/manual/test_grpc_connectivity.dart`
+
+---
+
+## 🧪 Testing Commands
+
+### Backend Tests
+```bash
+# Run all tests (HTTP integration tests)
+make test-all
+
+# Run unit tests only
+make test-unit
+
+# Start dev server (HTTP only)
+make dev
+
+# Start dev server (HTTP + gRPC)
+make dev-grpc
+```
+
+### Manual gRPC Testing (grpcurl)
+```bash
+# List services
+grpcurl -plaintext localhost:8082 list
+
+# Get server info
+grpcurl -plaintext -d '{}' localhost:8082 toolbridge.sync.v1.SyncService/GetServerInfo
+
+# Begin session (with dev mode auth)
+grpcurl -plaintext \
+  -H "x-debug-sub: test-user" \
+  -d '{}' \
+  localhost:8082 toolbridge.sync.v1.SyncService/BeginSession
+```
+
+### Flutter Manual Testing
+```bash
+cd /Users/erauner/git/side/ToolBridge
+dart test/manual/test_grpc_connectivity.dart
+```
+
+---
+
+**Next Step**: Implement Phase 3 integration tests to enable confident production deployment
