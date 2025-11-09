@@ -25,10 +25,11 @@ help:
 	@echo "Testing:"
 	@echo "  make test             - Run all tests (unit + integration)"
 	@echo "  make test-unit        - Run unit tests only (fast, no DB)"
-	@echo "  make test-integration - Run integration tests (requires DB)"
+	@echo "  make test-integration - Run HTTP integration tests (requires DB)"
+	@echo "  make test-grpc        - Run gRPC integration tests (requires DB)"
 	@echo "  make test-smoke       - Run smoke tests against running server"
 	@echo "  make test-e2e         - Run end-to-end tests (starts server, runs smoke, stops)"
-	@echo "  make test-all         - Run complete test suite (unit + integration + e2e)"
+	@echo "  make test-all         - Run complete test suite (unit + HTTP + gRPC + e2e)"
 	@echo "  make ci               - Run CI pipeline locally (lint + test-all)"
 	@echo ""
 	@echo "Docker:"
@@ -86,9 +87,15 @@ test-unit:
 
 # Run integration tests (requires database)
 test-integration:
-	@echo "Running integration tests..."
+	@echo "Running HTTP integration tests..."
 	TEST_DATABASE_URL=postgres://toolbridge:dev-password@localhost:5432/toolbridge?sslmode=disable \
 	go test -v -race -cover ./internal/httpapi/...
+
+# Run gRPC integration tests (requires database)
+test-grpc:
+	@echo "Running gRPC integration tests..."
+	TEST_DATABASE_URL=postgres://toolbridge:dev-password@localhost:5432/toolbridge?sslmode=disable \
+	go test -tags grpc -v -race -cover ./internal/grpcapi/...
 
 # Run smoke tests against running server
 test-smoke:
@@ -137,11 +144,15 @@ test-all:
 	@echo "────────────────────────────────────────────"
 	@$(MAKE) test-unit
 	@echo ""
-	@echo "Phase 2: Integration Tests (requires DB)"
+	@echo "Phase 2: HTTP Integration Tests (requires DB)"
 	@echo "────────────────────────────────────────────"
 	@$(MAKE) test-integration
 	@echo ""
-	@echo "Phase 3: End-to-End Tests (full stack)"
+	@echo "Phase 3: gRPC Integration Tests (requires DB)"
+	@echo "────────────────────────────────────────────"
+	@$(MAKE) test-grpc
+	@echo ""
+	@echo "Phase 4: End-to-End Tests (full stack)"
 	@echo "────────────────────────────────────────────"
 	@$(MAKE) test-e2e
 	@echo ""
