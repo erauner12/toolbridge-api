@@ -287,10 +287,12 @@ func isSessionExempt(method string) bool {
 
 // isEpochExempt returns true if the method does not require epoch validation
 func isEpochExempt(method string) bool {
-	// Epoch exempt = session exempt + EndSession + GetSyncState
+	// Epoch exempt = session exempt + EndSession + GetSyncState + WipeAccount
+	// Note: WipeAccount needs session but not epoch (client may not know new epoch after wipe)
 	return isSessionExempt(method) ||
 		method == "/toolbridge.sync.v1.SyncService/EndSession" ||
-		method == "/toolbridge.sync.v1.SyncService/GetSyncState"
+		method == "/toolbridge.sync.v1.SyncService/GetSyncState" ||
+		method == "/toolbridge.sync.v1.SyncService/WipeAccount"
 }
 
 // RecoveryInterceptor recovers from panics and returns Internal error
