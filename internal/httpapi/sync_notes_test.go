@@ -406,3 +406,136 @@ func TestSoftDelete_Integration(t *testing.T) {
 		t.Errorf("Wrong note in deletes: %v", pullResp.Deletes[0])
 	}
 }
+
+func TestPinnedFieldRoundTrip_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestDB(t)
+	defer pool.Close()
+
+	srv := &Server{
+		DB:              pool,
+		RateLimitConfig: DefaultRateLimitConfig,
+		NoteSvc:         syncservice.NewNoteService(pool),
+	}
+	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
+
+	// Create a session for this test suite
+	session := createTestSession(t, router)
+
+	// Push a note WITH pinned field set to true
+	original := map[string]any{
+		"uid":       "d2e8c9ad-b2c3-5d4e-af9g-8b7c6d5e4f3a",
+		"title":     "Pinned Note Test",
+		"content":   "This note should have pinned=true preserved",
+		"pinned":    true, // ← THE CRITICAL FIELD
+		"updatedTs": "2025-11-03T10:00:00Z",
+		"sync": map[string]any{
+			"version":   float64(1),
+			"isDeleted": false,
+		},
+	}
+
+	pushRec := makeRequestWithSession(t, router, "POST", "/v1/sync/notes/push", pushReq{Items: []map[string]any{original}}, session)
+
+	// Verify push succeeded
+	var pushAcks []pushAck
+	if err := json.NewDecoder(pushRec.Body).Decode(&pushAcks); err != nil {
+		t.Fatalf("Failed to decode push response: %v", err)
+	}
+	if len(pushAcks) != 1 || pushAcks[0].Error != "" {
+		t.Fatalf("Push failed: %v", pushAcks)
+	}
+
+	// Pull it back
+	pullRec := makeRequestWithSession(t, router, "GET", "/v1/sync/notes/pull?limit=100", nil, session)
+
+	var pullResp pullResp
+	if err := json.NewDecoder(pullRec.Body).Decode(&pullResp); err != nil {
+		t.Fatalf("Failed to decode pull response: %v", err)
+	}
+
+	if len(pullResp.Upserts) != 1 {
+		t.Fatalf("Expected 1 note, got %d", len(pullResp.Upserts))
+	}
+
+	retrieved := pullResp.Upserts[0]
+
+	// CRITICAL TEST: Verify pinned field is preserved
+	pinnedValue, hasPinned := retrieved["pinned"]
+	if !hasPinned {
+		t.Errorf("FAIL: pinned field is missing from pulled note! Retrieved note: %+v", retrieved)
+	} else if pinnedBool, ok := pinnedValue.(bool); !ok {
+		t.Errorf("FAIL: pinned field has wrong type: %T (value: %v)", pinnedValue, pinnedValue)
+	} else if !pinnedBool {
+		t.Errorf("FAIL: pinned field is false, expected true")
+	} else {
+		t.Logf("SUCCESS: pinned field correctly preserved as true")
+	}
+
+	// Also verify other fields preserved
+	if retrieved["title"] != original["title"] {
+		t.Errorf("Title mismatch: got %v, want %v", retrieved["title"], original["title"])
+	}
+	if retrieved["content"] != original["content"] {
+		t.Errorf("Content mismatch: got %v, want %v", retrieved["content"], original["content"])
+	}
+}
+
+func TestPinnedFieldFalse_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestDB(t)
+	defer pool.Close()
+
+	srv := &Server{
+		DB:              pool,
+		RateLimitConfig: DefaultRateLimitConfig,
+		NoteSvc:         syncservice.NewNoteService(pool),
+	}
+	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
+
+	// Create a session for this test suite
+	session := createTestSession(t, router)
+
+	// Push a note with pinned=false
+	original := map[string]any{
+		"uid":       "e3f9dabc-c3d4-6e5f-bg0h-9c8d7e6f5g4b",
+		"title":     "Unpinned Note Test",
+		"pinned":    false, // ← Explicitly false
+		"updatedTs": "2025-11-03T10:00:00Z",
+		"sync": map[string]any{
+			"version": float64(1),
+		},
+	}
+
+	makeRequestWithSession(t, router, "POST", "/v1/sync/notes/push", pushReq{Items: []map[string]any{original}}, session)
+
+	// Pull it back
+	pullRec := makeRequestWithSession(t, router, "GET", "/v1/sync/notes/pull?limit=100", nil, session)
+
+	var pullResp pullResp
+	json.NewDecoder(pullRec.Body).Decode(&pullResp)
+
+	if len(pullResp.Upserts) != 1 {
+		t.Fatalf("Expected 1 note, got %d", len(pullResp.Upserts))
+	}
+
+	retrieved := pullResp.Upserts[0]
+
+	// Verify pinned=false is preserved (not dropped)
+	pinnedValue, hasPinned := retrieved["pinned"]
+	if !hasPinned {
+		t.Errorf("FAIL: pinned field is missing (should be false, not omitted)")
+	} else if pinnedBool, ok := pinnedValue.(bool); !ok {
+		t.Errorf("FAIL: pinned field has wrong type: %T", pinnedValue)
+	} else if pinnedBool {
+		t.Errorf("FAIL: pinned field is true, expected false")
+	} else {
+		t.Logf("SUCCESS: pinned=false correctly preserved")
+	}
+}

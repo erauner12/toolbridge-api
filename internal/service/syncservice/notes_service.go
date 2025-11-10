@@ -3,6 +3,7 @@ package syncservice
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/erauner12/toolbridge-api/internal/syncx"
 	"github.com/google/uuid"
@@ -58,6 +59,15 @@ func (s *NoteService) PushNoteItem(ctx context.Context, tx pgx.Tx, userID string
 			UpdatedAt: syncx.RFC3339(ext.UpdatedAtMs),
 			Error:     "payload serialization error",
 		}
+	}
+
+	// Debug logging for pinned field
+	if pinnedVal, hasPinned := item["pinned"]; hasPinned {
+		logger.Debug().
+			Str("uid", ext.UID.String()).
+			Interface("pinned_value", pinnedVal).
+			Str("pinned_type", fmt.Sprintf("%T", pinnedVal)).
+			Msg("note has pinned field in push")
 	}
 
 	// Insert or update with LWW conflict resolution
@@ -157,6 +167,19 @@ func (s *NoteService) PullNotes(ctx context.Context, userID string, cursor syncx
 			})
 		} else {
 			// Active note - return full payload
+			// Debug logging for pinned field
+			if pinnedVal, hasPinned := payload["pinned"]; hasPinned {
+				logger.Debug().
+					Str("uid", uid).
+					Interface("pinned_value", pinnedVal).
+					Str("pinned_type", fmt.Sprintf("%T", pinnedVal)).
+					Msg("note has pinned field in pull")
+			} else {
+				logger.Debug().
+					Str("uid", uid).
+					Interface("payload_keys", getKeys(payload)).
+					Msg("note missing pinned field in pull")
+			}
 			upserts = append(upserts, payload)
 		}
 
@@ -181,4 +204,13 @@ func (s *NoteService) PullNotes(ctx context.Context, userID string, cursor syncx
 		Deletes:    deletes,
 		NextCursor: nextCursor,
 	}, nil
+}
+
+// Helper function to get keys from a map for debugging
+func getKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
