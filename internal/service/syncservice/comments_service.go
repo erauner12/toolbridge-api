@@ -230,3 +230,207 @@ func (s *CommentService) PullComments(ctx context.Context, userID string, cursor
 		NextCursor: nextCursor,
 	}, nil
 }
+
+// REST-specific methods
+
+// GetComment retrieves a single comment by UID
+// Returns 404 if not found, 410 if deleted (unless includeDeleted=true)
+func (s *CommentService) GetComment(ctx context.Context, userID string, uid uuid.UUID, includeDeleted bool) (*RESTItem, error) {
+	logger := log.With().Logger()
+
+	var payload map[string]any
+	var version int
+	var updatedAtMs int64
+	var deletedAtMs *int64
+
+	err := s.DB.QueryRow(ctx, `
+		SELECT payload_json, version, updated_at_ms, deleted_at_ms
+		FROM comment
+		WHERE owner_id = $1 AND uid = $2
+	`, userID, uid).Scan(&payload, &version, &updatedAtMs, &deletedAtMs)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil // Not found
+		}
+		logger.Error().Err(err).Str("uid", uid.String()).Msg("failed to get comment")
+		return nil, err
+	}
+
+	// Check if deleted
+	if deletedAtMs != nil && !includeDeleted {
+		return nil, nil // Return nil to signal 410 Gone
+	}
+
+	item := &RESTItem{
+		UID:       uid.String(),
+		Version:   version,
+		UpdatedAt: syncx.RFC3339(updatedAtMs),
+		Payload:   payload,
+	}
+
+	if deletedAtMs != nil {
+		deletedAt := syncx.RFC3339(*deletedAtMs)
+		item.DeletedAt = &deletedAt
+	}
+
+	return item, nil
+}
+
+// ListComments returns paginated comments for REST endpoints
+func (s *CommentService) ListComments(ctx context.Context, userID string, cursor syncx.Cursor, limit int, includeDeleted bool) (*RESTListResponse, error) {
+	logger := log.With().Logger()
+
+	// Build query based on includeDeleted
+	query := `
+		SELECT payload_json, deleted_at_ms, updated_at_ms, uid, version
+		FROM comment
+		WHERE owner_id = $1
+		  AND (updated_at_ms, uid) > ($2, $3::uuid)
+	`
+	if !includeDeleted {
+		query += ` AND deleted_at_ms IS NULL`
+	}
+	query += ` ORDER BY updated_at_ms, uid LIMIT $4`
+
+	rows, err := s.DB.Query(ctx, query, userID, cursor.Ms, cursor.UID, limit)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to list comments")
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]RESTItem, 0, limit)
+	var lastMs int64
+	var lastUID string
+
+	for rows.Next() {
+		var payload map[string]any
+		var deletedAtMs *int64
+		var ms int64
+		var uid string
+		var version int
+
+		if err := rows.Scan(&payload, &deletedAtMs, &ms, &uid, &version); err != nil {
+			logger.Error().Err(err).Msg("failed to scan comment row")
+			return nil, err
+		}
+
+		item := RESTItem{
+			UID:       uid,
+			Version:   version,
+			UpdatedAt: syncx.RFC3339(ms),
+			Payload:   payload,
+		}
+
+		if deletedAtMs != nil {
+			deletedAt := syncx.RFC3339(*deletedAtMs)
+			item.DeletedAt = &deletedAt
+		}
+
+		items = append(items, item)
+		lastMs, lastUID = ms, uid
+	}
+
+	if err := rows.Err(); err != nil {
+		logger.Error().Err(err).Msg("row iteration error")
+		return nil, err
+	}
+
+	// Generate next cursor if we have results
+	var nextCursor *string
+	if len(items) > 0 {
+		uid, _ := uuid.Parse(lastUID)
+		encoded := syncx.EncodeCursor(syncx.Cursor{Ms: lastMs, UID: uid})
+		nextCursor = &encoded
+	}
+
+	return &RESTListResponse{
+		Items:      items,
+		NextCursor: nextCursor,
+	}, nil
+}
+
+// ApplyCommentMutation creates or updates a comment via REST
+// Handles optimistic locking, monotonic timestamps, and soft deletes
+func (s *CommentService) ApplyCommentMutation(ctx context.Context, userID string, payload map[string]any, opts MutationOpts) (*RESTItem, error) {
+	logger := log.With().Logger()
+
+	// Start transaction
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to begin transaction")
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	// Extract UID or generate new one
+	var commentUID uuid.UUID
+	if uidStr, ok := syncx.GetString(payload, "uid"); ok {
+		commentUID, _ = uuid.Parse(uidStr)
+	}
+	if commentUID == uuid.Nil {
+		commentUID = uuid.New()
+		payload["uid"] = commentUID.String()
+	}
+
+	// Fetch existing comment to determine timestamp
+	var existingMs int64
+	var existingVersion int
+	err = tx.QueryRow(ctx, `
+		SELECT updated_at_ms, version
+		FROM comment
+		WHERE owner_id = $1 AND uid = $2
+	`, userID, commentUID).Scan(&existingMs, &existingVersion)
+
+	isNew := err == pgx.ErrNoRows
+
+	// Optimistic locking check
+	if !isNew && opts.EnforceVersion {
+		if existingVersion != opts.ExpectedVersion {
+			return nil, &VersionMismatchError{
+				Expected: opts.ExpectedVersion,
+				Actual:   existingVersion,
+			}
+		}
+	}
+
+	// Determine timestamp (monotonic)
+	var timestampMs int64
+	if opts.ForceTimestampMs != nil {
+		timestampMs = *opts.ForceTimestampMs
+	} else if isNew {
+		timestampMs = syncx.NowMs()
+	} else {
+		timestampMs = syncx.EnsureMonotonicTimestamp(existingMs)
+	}
+
+	// Build sync-compliant payload
+	mutatedPayload := syncx.BuildServerMutation(payload, timestampMs, opts.SetDeleted)
+
+	// Call existing push logic
+	ack := s.PushCommentItem(ctx, tx, userID, mutatedPayload)
+	if ack.Error != "" {
+		return nil, &MutationError{Message: ack.Error}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		logger.Error().Err(err).Msg("failed to commit mutation")
+		return nil, err
+	}
+
+	// Return item
+	var deletedAt *string
+	if opts.SetDeleted {
+		ts := syncx.RFC3339(timestampMs)
+		deletedAt = &ts
+	}
+
+	return &RESTItem{
+		UID:       ack.UID,
+		Version:   ack.Version,
+		UpdatedAt: ack.UpdatedAt,
+		DeletedAt: deletedAt,
+		Payload:   mutatedPayload,
+	}, nil
+}
