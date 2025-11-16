@@ -3,7 +3,6 @@ package syncservice
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/erauner12/toolbridge-api/internal/syncx"
 	"github.com/google/uuid"

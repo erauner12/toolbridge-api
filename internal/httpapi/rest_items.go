@@ -135,6 +135,7 @@ func (s *Server) GetNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	includeDeleted := parseIncludeDeleted(r)
 	item, err := s.NoteSvc.GetNote(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get note")
@@ -512,6 +513,7 @@ func (s *Server) GetTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	includeDeleted := parseIncludeDeleted(r)
 	item, err := s.TaskSvc.GetTask(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get task")
@@ -887,6 +889,7 @@ func (s *Server) GetChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	includeDeleted := parseIncludeDeleted(r)
 	item, err := s.ChatSvc.GetChat(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get chat")
@@ -1260,6 +1263,7 @@ func (s *Server) GetComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	includeDeleted := parseIncludeDeleted(r)
 	item, err := s.CommentSvc.GetComment(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get comment")
@@ -1633,6 +1637,7 @@ func (s *Server) GetChatMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	includeDeleted := parseIncludeDeleted(r)
 	item, err := s.ChatMessageSvc.GetChatMessage(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get chat message")
