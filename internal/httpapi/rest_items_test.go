@@ -563,7 +563,7 @@ func TestOptimisticLocking_QuotedETag(t *testing.T) {
 		body := toJSONReader(updatePayload)
 
 		req := httptest.NewRequest("PATCH", fmt.Sprintf("/v1/notes/%s", noteUID), body)
-		req.Header.Set("X-Debug-Sub", testUserID)
+		req.Header.Set("X-Debug-Sub", testUserSubject)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("If-Match", fmt.Sprintf("%d", currentItem.Version)) // Unquoted ETag
 		w := httptest.NewRecorder()
