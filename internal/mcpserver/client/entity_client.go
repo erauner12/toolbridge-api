@@ -175,17 +175,46 @@ func (c *EntityClient) Update(ctx context.Context, uid uuid.UUID, payload map[st
 	defer resp.Body.Close()
 
 	switch resp.StatusCode {
-	case http.StatusConflict:
-		// Version mismatch or epoch mismatch
-		// Try to parse response to distinguish
+	case http.StatusPreconditionFailed: // 412 - If-Match version mismatch
+		// Server returns 412 when If-Match header doesn't match current version
+		// Extract actual version from ETag header if available
+		actualVersion := 0
+		if etag := resp.Header.Get("ETag"); etag != "" {
+			// Try to parse ETag as version number (server may quote it)
+			if v, err := strconv.Atoi(etag); err == nil {
+				actualVersion = v
+			} else if v, err := strconv.Atoi(etag[1 : len(etag)-1]); err == nil && len(etag) > 2 {
+				// Remove quotes if present
+				actualVersion = v
+			}
+		}
+
+		expectedVersion := 0
+		if version != nil {
+			expectedVersion = *version
+		}
+		return nil, ErrVersionMismatch{Expected: expectedVersion, Actual: actualVersion}
+
+	case http.StatusConflict: // 409 - Epoch mismatch or version conflict
+		// Try to parse response to distinguish epoch mismatch from version mismatch
 		var errResp struct {
-			Error string `json:"error"`
+			Error   string `json:"error"`
+			Version int    `json:"version,omitempty"`
 		}
-		if json.NewDecoder(resp.Body).Decode(&errResp) == nil && errResp.Error != "epoch_mismatch" {
-			return nil, ErrVersionMismatch{Expected: *version}
+		if json.NewDecoder(resp.Body).Decode(&errResp) == nil {
+			if errResp.Error == "epoch_mismatch" {
+				// Epoch mismatch - already handled by HTTPClient retry logic
+				return nil, fmt.Errorf("update failed with conflict (epoch mismatch)")
+			}
+			// Version mismatch in 409 response
+			expectedVersion := 0
+			if version != nil {
+				expectedVersion = *version
+			}
+			return nil, ErrVersionMismatch{Expected: expectedVersion, Actual: errResp.Version}
 		}
-		// Epoch mismatch - already handled by HTTPClient retry logic
-		return nil, fmt.Errorf("update failed with conflict (epoch mismatch)")
+		// Unknown conflict
+		return nil, fmt.Errorf("update failed with conflict")
 
 	case http.StatusOK:
 		// Success - decode response
