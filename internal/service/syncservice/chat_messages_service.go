@@ -387,6 +387,23 @@ func (s *ChatMessageService) ApplyChatMessageMutation(ctx context.Context, userI
 		return nil, &MutationError{Message: ack.Error}
 	}
 
+	// Fix payload's sync.version to match the authoritative server version
+	// This ensures delta-sync clients see the correct version in the payload
+	_, err = tx.Exec(ctx, `
+		UPDATE chat_message
+		SET payload_json = jsonb_set(payload_json, '{sync,version}', to_jsonb($1::int))
+		WHERE owner_id = $2 AND uid = $3
+	`, ack.Version, userID, chatMessageUID)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to update payload version")
+		return nil, err
+	}
+
+	// Also update the in-memory payload for the response
+	if syncBlock, ok := mutatedPayload["sync"].(map[string]any); ok {
+		syncBlock["version"] = ack.Version
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		logger.Error().Err(err).Msg("failed to commit mutation")
 		return nil, err
