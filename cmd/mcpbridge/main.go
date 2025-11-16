@@ -4,14 +4,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/erauner12/toolbridge-api/internal/mcpserver/auth"
-	"github.com/erauner12/toolbridge-api/internal/mcpserver/client"
 	"github.com/erauner12/toolbridge-api/internal/mcpserver/config"
+	"github.com/erauner12/toolbridge-api/internal/mcpserver/server"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -170,96 +170,32 @@ func parseLogLevel(level string) zerolog.Level {
 
 // run is the main application logic
 func run(ctx context.Context, cfg *config.Config) error {
-	var broker *auth.TokenBroker
-	var httpClient *client.HTTPClient
+	// Phase 4: Start MCP server in Streamable HTTP mode
+	mcpServer := server.NewMCPServer(cfg)
 
-	// Initialize Auth0 token broker (unless in dev mode)
-	if !cfg.DevMode {
-		log.Info().Msg("Initializing Auth0 token broker...")
-
-		// Create device code flow delegate
-		delegate := auth.NewDeviceDelegate()
-
-		// Create token broker with caching
-		var err error
-		broker, err = auth.NewBroker(cfg.Auth0, delegate)
-		if err != nil {
-			return fmt.Errorf("failed to create auth broker: %w", err)
+	// Start HTTP server in background
+	serverErr := make(chan error, 1)
+	go func() {
+		addr := ":8082" // Different port from REST API (8081)
+		if err := mcpServer.Start(addr); err != nil && err != http.ErrServerClosed {
+			log.Error().Err(err).Msg("MCP server failed")
+			serverErr <- err
 		}
+	}()
 
-		log.Info().
-			Str("auth0Domain", cfg.Auth0.Domain).
-			Int("clientCount", len(cfg.Auth0.Clients)).
-			Strs("defaultScopes", cfg.Auth0.GetDefaultScopes()).
-			Msg("Auth0 token broker initialized")
+	log.Info().Msg("MCP server started in Streamable HTTP mode")
 
-		// Optionally warm up the session in non-interactive mode
-		// This will load cached refresh tokens if available
-		if _, err := delegate.EnsureSession(ctx, false, cfg.Auth0.GetDefaultScopes()); err != nil {
-			log.Warn().Err(err).Msg("failed to establish initial Auth0 session (will retry on first token request)")
-		}
-
-		// Phase 3: Initialize REST client with session management
-		log.Info().Msg("Initializing REST client with session management...")
-
-		audience := cfg.Auth0.SyncAPI.Audience
-		sessionMgr := client.NewSessionManager(cfg.APIBaseURL, broker, audience)
-		httpClient = client.NewHTTPClient(cfg.APIBaseURL, broker, sessionMgr, audience, "")
-
-		log.Info().
-			Str("apiBaseUrl", cfg.APIBaseURL).
-			Str("audience", audience).
-			Msg("REST client initialized")
-	} else {
-		log.Info().Msg("Running in dev mode - Auth0 authentication bypassed")
-
-		// Phase 3: Initialize REST client in dev mode with session management
-		// Uses X-Debug-Sub header instead of Bearer token
-		debugSub := "mcp-bridge-dev-user"
-		sessionMgr := client.NewDevSessionManager(cfg.APIBaseURL, debugSub)
-		httpClient = client.NewHTTPClient(cfg.APIBaseURL, nil, sessionMgr, "", debugSub)
-
-		log.Info().
-			Str("apiBaseUrl", cfg.APIBaseURL).
-			Str("debugSub", debugSub).
-			Msg("REST client initialized (dev mode)")
+	// Wait for shutdown signal or server error
+	select {
+	case <-ctx.Done():
+		log.Info().Msg("Shutting down MCP server...")
+	case err := <-serverErr:
+		return fmt.Errorf("MCP server error: %w", err)
 	}
 
-	// TODO: Phase 4 - Initialize MCP server with httpClient
-	// Example entity clients that will be used in Phase 4:
-	// - notesClient := client.NewEntityClient(httpClient, "notes")
-	// - tasksClient := client.NewEntityClient(httpClient, "tasks")
-	// - commentsClient := client.NewEntityClient(httpClient, "comments")
-	// - chatsClient := client.NewEntityClient(httpClient, "chats")
-	// - messagesClient := client.NewEntityClient(httpClient, "chat_messages")
+	// Graceful shutdown
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	// httpClient will be used in Phase 4 for MCP server
-	_ = httpClient
-
-	log.Info().Msg("MCP Bridge Phase 3 complete - REST client ready (MCP server implementation in Phase 4)")
-
-	// Log configuration summary
-	log.Debug().
-		Interface("config", cfg).
-		Msg("Configuration loaded")
-
-	// Wait for shutdown signal
-	<-ctx.Done()
-
-	log.Info().Msg("Shutting down MCP server...")
-
-	// Cleanup
-	if broker != nil {
-		// Logout and clear cached tokens
-		if err := broker.LogoutAll(ctx); err != nil {
-			log.Warn().Err(err).Msg("error during logout")
-		}
-	}
-
-	// TODO: Phase 4 - Graceful shutdown of MCP server
-	// - Close stdio connections
-	// - Flush pending operations
-	// - Save state if needed
-
-	return nil
+	return mcpServer.Shutdown(shutdownCtx)
 }
