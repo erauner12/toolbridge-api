@@ -26,6 +26,7 @@ help:
 	@echo "  make build-mcp        - Build MCP bridge binary"
 	@echo "  make run-mcp          - Run MCP bridge in dev mode"
 	@echo "  make test-mcp         - Test MCP bridge components"
+	@echo "  make test-mcp-smoke   - Run MCP bridge smoke tests"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test             - Run all tests (unit + integration)"
@@ -212,6 +213,11 @@ run-mcp:
 test-mcp:
 	@echo "Testing MCP bridge components..."
 	go test -v -race -cover ./internal/mcpserver/...
+
+# Run MCP bridge smoke tests (dev mode)
+test-mcp-smoke:
+	@echo "Running MCP bridge smoke tests..."
+	@./scripts/test-mcp-dev-mode.sh
 
 # Build Docker image for local platform (fast, for development)
 docker-build-local:

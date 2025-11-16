@@ -97,15 +97,27 @@ func loadConfig() (*config.Config, error) {
 		return nil, err
 	}
 
-	// Apply CLI flag overrides
+	// Apply CLI flag overrides BEFORE validation
+	// This allows --dev and --debug to work without requiring config/env setup
 	if *devMode {
 		cfg.DevMode = true
 	}
 	if *debug {
 		cfg.Debug = true
+		// Auto-set log level to debug when --debug flag is used
+		// (unless user explicitly set a different level)
+		if *logLevel == "info" {
+			cfg.LogLevel = "debug"
+		}
 	}
 	if *logLevel != "info" {
 		cfg.LogLevel = *logLevel
+	}
+
+	// Validate configuration AFTER applying CLI overrides
+	// This ensures --dev mode can bypass Auth0 validation
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 
 	return cfg, nil

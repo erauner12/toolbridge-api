@@ -26,6 +26,7 @@ func defaultMacosRedirectURI(domain string) string {
 }
 
 // Load loads configuration from a file path and applies environment variable overrides
+// Validation is deferred to allow CLI flag overrides to be applied first
 func Load(configPath string) (*Config, error) {
 	// Start with default config
 	cfg := DefaultConfig()
@@ -42,10 +43,8 @@ func Load(configPath string) (*Config, error) {
 	// Apply environment variable overrides
 	applyEnvironmentOverrides(cfg)
 
-	// Validate the final configuration
-	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("configuration validation failed: %w", err)
-	}
+	// Note: Validation is NOT performed here to allow CLI flags to override
+	// Call cfg.Validate() after applying CLI overrides in the caller
 
 	return cfg, nil
 }
@@ -195,13 +194,13 @@ func applyDefaultScopes(auth0 *Auth0Config) {
 
 // LoadFromEnvironment creates a configuration using only environment variables
 // This is useful for containerized deployments where files may not be available
+// Validation is deferred to allow CLI flag overrides to be applied first
 func LoadFromEnvironment() (*Config, error) {
 	cfg := DefaultConfig()
 	applyEnvironmentOverrides(cfg)
 
-	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("configuration validation failed: %w", err)
-	}
+	// Note: Validation is NOT performed here to allow CLI flags to override
+	// Call cfg.Validate() after applying CLI overrides in the caller
 
 	return cfg, nil
 }

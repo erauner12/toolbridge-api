@@ -96,11 +96,14 @@ Create a config file based on `config/mcpbridge_config.example.json`:
 
 Flags:
   --config string      Path to configuration file (JSON)
-  --dev                Enable development mode (uses X-Debug-Sub header)
-  --debug              Enable debug logging
+  --dev                Enable development mode (bypasses Auth0 validation, uses X-Debug-Sub header)
+  --debug              Enable debug logging with pretty console output (implies --log-level debug)
   --log-level string   Log level (debug, info, warn, error) (default "info")
   --version            Show version information
 ```
+
+**Note**: The `--debug` flag automatically enables debug-level logging and switches to
+console output format with colors. You don't need to also specify `--log-level debug`.
 
 ## Claude Desktop Integration
 
@@ -146,8 +149,11 @@ make build-mcp
 ## Testing
 
 ```bash
-# Run MCP bridge tests
+# Run unit tests
 make test-mcp
+
+# Run smoke tests (verifies --dev and --debug flags work)
+make test-mcp-smoke
 
 # Run with verbose output
 go test -v ./internal/mcpserver/...
