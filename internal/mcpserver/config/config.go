@@ -4,13 +4,14 @@ import "time"
 
 // Config holds all configuration for the MCP bridge server
 type Config struct {
-	Auth0      Auth0Config     `json:"auth0"`
-	APIBaseURL string          `json:"apiBaseUrl"`
-	Workspace  WorkspaceConfig `json:"workspace"`
-	Allowlist  []string        `json:"allowlist"`
-	Debug      bool            `json:"debug"`
-	DevMode    bool            `json:"devMode"` // enables X-Debug-Sub header fallback
-	LogLevel   string          `json:"logLevel"`
+	Auth0          Auth0Config     `json:"auth0"`
+	APIBaseURL     string          `json:"apiBaseUrl"`
+	Workspace      WorkspaceConfig `json:"workspace"`
+	Allowlist      []string        `json:"allowlist"`       // deprecated, unused
+	AllowedOrigins []string        `json:"allowedOrigins"`  // CORS origin validation (DNS rebinding protection)
+	Debug          bool            `json:"debug"`
+	DevMode        bool            `json:"devMode"` // enables X-Debug-Sub header fallback
+	LogLevel       string          `json:"logLevel"`
 }
 
 // Auth0Config mirrors the Dart Auth0Config structure
@@ -135,10 +136,11 @@ func (a *Auth0Config) GetDefaultScopes() []string {
 // DefaultConfig returns a configuration with sensible defaults
 func DefaultConfig() *Config {
 	return &Config{
-		APIBaseURL: "http://localhost:8081",
-		Debug:      false,
-		DevMode:    false,
-		LogLevel:   "info",
+		APIBaseURL:     "http://localhost:8081",
+		Debug:          false,
+		DevMode:        false,
+		LogLevel:       "info",
+		AllowedOrigins: []string{}, // Empty = allow all (dev mode), must configure for production
 		Workspace: WorkspaceConfig{
 			Roots: []string{},
 		},
