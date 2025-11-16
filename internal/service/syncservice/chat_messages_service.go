@@ -355,6 +355,11 @@ func (s *ChatMessageService) ApplyChatMessageMutation(ctx context.Context, userI
 		WHERE owner_id = $1 AND uid = $2
 	`, userID, chatMessageUID).Scan(&existingMs, &existingVersion)
 
+	if err != nil && err != pgx.ErrNoRows {
+		logger.Error().Err(err).Msg("failed to probe existing chat_message")
+		return nil, err
+	}
+
 	isNew := err == pgx.ErrNoRows
 
 	// Optimistic locking check

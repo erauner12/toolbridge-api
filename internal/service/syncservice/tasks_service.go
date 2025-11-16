@@ -320,6 +320,11 @@ func (s *TaskService) ApplyTaskMutation(ctx context.Context, userID string, payl
 		WHERE owner_id = $1 AND uid = $2
 	`, userID, taskUID).Scan(&existingMs, &existingVersion)
 
+	if err != nil && err != pgx.ErrNoRows {
+		logger.Error().Err(err).Msg("failed to probe existing task")
+		return nil, err
+	}
+
 	isNew := err == pgx.ErrNoRows
 
 	// Optimistic locking check

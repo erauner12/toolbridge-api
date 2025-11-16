@@ -336,6 +336,11 @@ func (s *NoteService) ApplyNoteMutation(ctx context.Context, userID string, payl
 		WHERE owner_id = $1 AND uid = $2
 	`, userID, noteUID).Scan(&existingMs, &existingVersion)
 
+	if err != nil && err != pgx.ErrNoRows {
+		logger.Error().Err(err).Msg("failed to probe existing note")
+		return nil, err
+	}
+
 	isNew := err == pgx.ErrNoRows
 
 	// Optimistic locking check

@@ -383,6 +383,11 @@ func (s *CommentService) ApplyCommentMutation(ctx context.Context, userID string
 		WHERE owner_id = $1 AND uid = $2
 	`, userID, commentUID).Scan(&existingMs, &existingVersion)
 
+	if err != nil && err != pgx.ErrNoRows {
+		logger.Error().Err(err).Msg("failed to probe existing comment")
+		return nil, err
+	}
+
 	isNew := err == pgx.ErrNoRows
 
 	// Optimistic locking check
