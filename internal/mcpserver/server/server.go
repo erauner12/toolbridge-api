@@ -47,10 +47,11 @@ func (s *MCPServer) Start(addr string) error {
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.handleOAuthMetadata)
 
 	s.httpServer = &http.Server{
-		Addr:         addr,
-		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		Addr:        addr,
+		Handler:     mux,
+		ReadTimeout: 30 * time.Second,
+		// WriteTimeout is intentionally omitted to support long-lived SSE connections
+		// SSE streams can stay open indefinitely for server-to-client notifications
 	}
 
 	log.Info().Str("addr", addr).Msg("Starting MCP server")
@@ -74,27 +75,46 @@ func (s *MCPServer) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract and validate JWT
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		s.sendError(w, nil, InvalidRequest, "missing authorization header")
-		return
+	var userID string
+	var tokenString string
+	var expiresAt time.Time
+
+	// Check for dev mode
+	if s.config.DevMode {
+		// In dev mode, allow X-Debug-Sub header as fallback
+		debugSub := r.Header.Get("X-Debug-Sub")
+		if debugSub != "" {
+			userID = debugSub
+			tokenString = "dev-mode-token"
+			expiresAt = time.Now().Add(24 * time.Hour)
+			log.Debug().Str("userId", userID).Msg("Using dev mode authentication")
+		}
 	}
 
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		s.sendError(w, nil, InvalidRequest, "invalid authorization header format")
-		return
-	}
+	// If not using dev mode or no debug header, use JWT
+	if userID == "" {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			s.sendError(w, nil, InvalidRequest, "missing authorization header")
+			return
+		}
 
-	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-	claims, err := s.jwtValidator.ValidateToken(tokenString)
-	if err != nil {
-		log.Warn().Err(err).Msg("JWT validation failed")
-		s.sendError(w, nil, InvalidRequest, "invalid token")
-		return
-	}
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			s.sendError(w, nil, InvalidRequest, "invalid authorization header format")
+			return
+		}
 
-	userID := claims.Subject
+		tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+		claims, err := s.jwtValidator.ValidateToken(tokenString)
+		if err != nil {
+			log.Warn().Err(err).Msg("JWT validation failed")
+			s.sendError(w, nil, InvalidRequest, "invalid token")
+			return
+		}
+
+		userID = claims.Subject
+		expiresAt = claims.ExpiresAt.Time
+	}
 
 	// Parse JSON-RPC request
 	var req JSONRPCRequest
@@ -111,7 +131,7 @@ func (s *MCPServer) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 
 	// Handle initialize specially (creates session)
 	if req.Method == "initialize" {
-		s.handleInitialize(w, r, &req, userID, tokenString, claims.ExpiresAt.Time)
+		s.handleInitialize(w, r, &req, userID, tokenString, expiresAt)
 		return
 	}
 
@@ -138,7 +158,7 @@ func (s *MCPServer) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 	s.sessionMgr.UpdateLastSeen(sessionID)
 
 	// Create token provider for this request
-	tokenProvider := NewPassthroughTokenProvider(tokenString, claims.ExpiresAt.Time)
+	tokenProvider := NewPassthroughTokenProvider(tokenString, expiresAt)
 
 	// Create REST client for this user
 	httpClient := s.createRESTClient(tokenProvider)
@@ -216,27 +236,41 @@ func (s *MCPServer) handleMCPGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract and validate JWT
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		http.Error(w, "missing authorization header", http.StatusUnauthorized)
-		return
+	var userID string
+
+	// Check for dev mode
+	if s.config.DevMode {
+		// In dev mode, allow X-Debug-Sub header as fallback
+		debugSub := r.Header.Get("X-Debug-Sub")
+		if debugSub != "" {
+			userID = debugSub
+			log.Debug().Str("userId", userID).Msg("Using dev mode authentication")
+		}
 	}
 
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		http.Error(w, "invalid authorization header format", http.StatusUnauthorized)
-		return
-	}
+	// If not using dev mode or no debug header, use JWT
+	if userID == "" {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "missing authorization header", http.StatusUnauthorized)
+			return
+		}
 
-	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-	claims, err := s.jwtValidator.ValidateToken(tokenString)
-	if err != nil {
-		log.Warn().Err(err).Msg("JWT validation failed")
-		http.Error(w, "invalid token", http.StatusUnauthorized)
-		return
-	}
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			http.Error(w, "invalid authorization header format", http.StatusUnauthorized)
+			return
+		}
 
-	userID := claims.Subject
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		claims, err := s.jwtValidator.ValidateToken(tokenString)
+		if err != nil {
+			log.Warn().Err(err).Msg("JWT validation failed")
+			http.Error(w, "invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		userID = claims.Subject
+	}
 
 	// Get session
 	sessionID := r.Header.Get("Mcp-Session-Id")
