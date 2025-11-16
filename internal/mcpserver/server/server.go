@@ -68,6 +68,12 @@ func (s *MCPServer) Shutdown(ctx context.Context) error {
 
 // handleMCPPost handles POST /mcp (JSON-RPC requests)
 func (s *MCPServer) handleMCPPost(w http.ResponseWriter, r *http.Request) {
+	// Validate Origin header (DNS rebinding protection)
+	if !s.validateOrigin(r) {
+		http.Error(w, "origin not allowed", http.StatusForbidden)
+		return
+	}
+
 	// Validate protocol version
 	protocolVersion := r.Header.Get("Mcp-Protocol-Version")
 	if protocolVersion != "2025-03-26" && protocolVersion != "2024-11-05" {
@@ -229,6 +235,12 @@ func (s *MCPServer) handleJSONRPC(w http.ResponseWriter, req *JSONRPCRequest, se
 
 // handleMCPGet handles GET /mcp (SSE stream)
 func (s *MCPServer) handleMCPGet(w http.ResponseWriter, r *http.Request) {
+	// Validate Origin header (DNS rebinding protection)
+	if !s.validateOrigin(r) {
+		http.Error(w, "origin not allowed", http.StatusForbidden)
+		return
+	}
+
 	// Validate protocol version
 	protocolVersion := r.Header.Get("Mcp-Protocol-Version")
 	if protocolVersion != "2025-03-26" && protocolVersion != "2024-11-05" {
@@ -316,6 +328,12 @@ func (s *MCPServer) handleMCPGet(w http.ResponseWriter, r *http.Request) {
 
 // handleMCPDelete handles DELETE /mcp (close session)
 func (s *MCPServer) handleMCPDelete(w http.ResponseWriter, r *http.Request) {
+	// Validate Origin header (DNS rebinding protection)
+	if !s.validateOrigin(r) {
+		http.Error(w, "origin not allowed", http.StatusForbidden)
+		return
+	}
+
 	sessionID := r.Header.Get("Mcp-Session-Id")
 	if sessionID == "" {
 		http.Error(w, "missing session ID", http.StatusBadRequest)
@@ -346,6 +364,42 @@ func (s *MCPServer) createRESTClient(tokenProvider *PassthroughTokenProvider) *c
 	audience := s.config.Auth0.SyncAPI.Audience
 	sessionMgr := client.NewSessionManager(s.config.APIBaseURL, tokenProvider, audience)
 	return client.NewHTTPClient(s.config.APIBaseURL, tokenProvider, sessionMgr, audience, "")
+}
+
+// validateOrigin checks if the request Origin header is allowed
+// This prevents DNS rebinding attacks as required by MCP Streamable HTTP spec
+func (s *MCPServer) validateOrigin(r *http.Request) bool {
+	// In dev mode, skip origin validation for local development
+	if s.config.DevMode {
+		return true
+	}
+
+	// If no allowed origins configured, allow all (WARNING: only safe for local dev)
+	if len(s.config.AllowedOrigins) == 0 {
+		log.Warn().Msg("No allowed origins configured - accepting all origins (unsafe for production)")
+		return true
+	}
+
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		// Requests without Origin header (e.g., from curl, server-to-server) are rejected
+		// Browser requests always include Origin header
+		log.Debug().Msg("Request missing Origin header")
+		return false
+	}
+
+	// Check if origin is in allowlist
+	for _, allowed := range s.config.AllowedOrigins {
+		if origin == allowed {
+			return true
+		}
+	}
+
+	log.Warn().
+		Str("origin", origin).
+		Strs("allowedOrigins", s.config.AllowedOrigins).
+		Msg("Origin not in allowlist")
+	return false
 }
 
 // Helper functions

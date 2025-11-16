@@ -550,14 +550,18 @@ If smoke tests fail, check:
 - [x] Entity CRUD operations
 - [x] TokenProvider abstraction (enables Streamable HTTP reuse)
 
-**Phase 4: Streamable HTTP Server** (In Progress)
-- [ ] HTTP server with POST/GET/DELETE `/mcp` endpoints
-- [ ] JWT validation (Auth0 RS256)
-- [ ] MCP session management
-- [ ] JSON-RPC message parsing
-- [ ] SSE streaming for server→client messages
-- [ ] OAuth metadata discovery (`/.well-known/...`)
-- [ ] PassthroughTokenProvider for Phase 3 integration
+**Phase 4: Streamable HTTP Server** ✅
+- [x] HTTP server with POST/GET/DELETE `/mcp` endpoints
+- [x] JWT validation (Auth0 RS256)
+- [x] MCP session management (24h TTL, automatic cleanup)
+- [x] JSON-RPC 2.0 message parsing
+- [x] SSE streaming for server→client messages
+- [x] OAuth metadata discovery (`/.well-known/...`)
+- [x] PassthroughTokenProvider for Phase 3 integration
+- [x] Dev mode authentication (X-Debug-Sub header)
+- [x] Client disconnect detection (SSE context handling)
+- [x] Thread-safe session management
+- [x] Origin validation (DNS rebinding protection)
 
 **Phase 5-6: Tool Implementations** (Planned)
 - [ ] Tool registry and dispatcher
@@ -580,6 +584,100 @@ If smoke tests fail, check:
 - [ ] Load testing (concurrent sessions)
 - [ ] Error handling improvements
 - [ ] Documentation updates
+
+## Future Improvements
+
+### ✨ Enhancement Opportunities (Future Phases)
+
+#### 1. SSE Resume Support
+**Status**: Basic SSE implemented, resume not supported
+**Priority**: P2 - Enhancement
+**Spec Reference**: MCP Streamable HTTP specification
+
+**Description**: The current SSE implementation generates sequential event IDs but doesn't support reconnection with `Last-Event-ID` header.
+
+**Benefits**:
+- Clients can reconnect after network interruption without losing messages
+- Better reliability for long-lived connections
+- Improved user experience
+
+**Required Implementation**:
+- Make event IDs globally unique across all streams within a session
+- Buffer recent messages per session
+- Handle `Last-Event-ID` header in GET /mcp requests
+- Replay missed messages on reconnection
+- Add message expiry/cleanup to prevent memory leaks
+
+#### 2. OAuth 2.1 Compliance
+**Status**: OAuth 2.0 implemented
+**Priority**: P2 - Enhancement
+**Spec Reference**: MCP Streamable HTTP specification, OAuth 2.1 draft
+
+**Description**: The current OAuth metadata endpoint follows OAuth 2.0. The MCP spec recommends OAuth 2.1 compliance.
+
+**Changes Required**:
+- Update `/.well-known/oauth-authorization-server` response format
+- Add PKCE (Proof Key for Code Exchange) support if applicable
+- Add additional OAuth 2.1 metadata fields
+- Review and update token handling for OAuth 2.1 best practices
+
+**Note**: This is mostly about metadata compliance; core functionality already works.
+
+#### 3. JSON-RPC Batch Support
+**Status**: Not implemented
+**Priority**: P3 - Enhancement
+**Spec Reference**: JSON-RPC 2.0 specification
+
+**Description**: The JSON-RPC 2.0 spec allows sending arrays of requests for batch processing. Currently, the server only handles single requests.
+
+**Benefits**:
+- Reduced network round-trips for multiple operations
+- Better performance for bulk operations
+- More efficient use of HTTP connections
+
+**Required Implementation**:
+- Detect array vs single object in request body
+- Process batch requests in parallel (where safe)
+- Return array of responses in same order
+- Handle partial failures gracefully
+- Add batch size limits to prevent abuse
+
+**Example**:
+```json
+// Request
+[
+  {"jsonrpc": "2.0", "id": 1, "method": "notes/list"},
+  {"jsonrpc": "2.0", "id": 2, "method": "tasks/list"}
+]
+
+// Response
+[
+  {"jsonrpc": "2.0", "id": 1, "result": {...}},
+  {"jsonrpc": "2.0", "id": 2, "result": {...}}
+]
+```
+
+### Implementation Roadmap
+
+**Completed (Phase 4)**:
+1. ✅ HTTP server with Streamable HTTP transport
+2. ✅ JWT validation and session management
+3. ✅ Origin validation (DNS rebinding protection)
+4. ✅ Dev mode support
+
+**Immediate (Next PR)**:
+5. 🛠️ Tool implementations (Phase 5-6)
+6. 🧪 Integration tests for tool operations
+
+**Short Term (Next 3 months)**:
+7. SSE resume support
+8. Production deployment prep
+9. Performance optimization
+
+**Long Term (Future)**:
+10. OAuth 2.1 compliance
+11. JSON-RPC batch support
+12. Advanced monitoring and metrics
 
 ## License
 

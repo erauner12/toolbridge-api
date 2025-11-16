@@ -495,3 +495,139 @@ func TestMCPServer_ToolsList(t *testing.T) {
 		t.Errorf("Expected empty tools list, got %d tools", len(tools))
 	}
 }
+
+func TestMCPServer_OriginValidation(t *testing.T) {
+	tests := []struct {
+		name           string
+		devMode        bool
+		allowedOrigins []string
+		requestOrigin  string
+		wantAllowed    bool
+	}{
+		{
+			name:           "dev mode allows any origin",
+			devMode:        true,
+			allowedOrigins: []string{},
+			requestOrigin:  "https://malicious.com",
+			wantAllowed:    true,
+		},
+		{
+			name:           "empty allowlist allows all (with warning)",
+			devMode:        false,
+			allowedOrigins: []string{},
+			requestOrigin:  "https://example.com",
+			wantAllowed:    true,
+		},
+		{
+			name:           "missing origin header rejected",
+			devMode:        false,
+			allowedOrigins: []string{"https://allowed.com"},
+			requestOrigin:  "",
+			wantAllowed:    false,
+		},
+		{
+			name:           "allowed origin accepted",
+			devMode:        false,
+			allowedOrigins: []string{"https://allowed.com", "https://also-allowed.com"},
+			requestOrigin:  "https://allowed.com",
+			wantAllowed:    true,
+		},
+		{
+			name:           "disallowed origin rejected",
+			devMode:        false,
+			allowedOrigins: []string{"https://allowed.com"},
+			requestOrigin:  "https://malicious.com",
+			wantAllowed:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{
+				DevMode:        tt.devMode,
+				AllowedOrigins: tt.allowedOrigins,
+				Auth0: config.Auth0Config{
+					Domain: "test.auth0.com",
+					SyncAPI: &config.SyncAPIConfig{
+						Audience: "https://api.test.com",
+					},
+				},
+				APIBaseURL: "http://localhost:8081",
+			}
+
+			server := NewMCPServer(cfg)
+
+			req := httptest.NewRequest("POST", "/mcp", nil)
+			if tt.requestOrigin != "" {
+				req.Header.Set("Origin", tt.requestOrigin)
+			}
+
+			allowed := server.validateOrigin(req)
+			if allowed != tt.wantAllowed {
+				t.Errorf("validateOrigin() = %v, want %v", allowed, tt.wantAllowed)
+			}
+		})
+	}
+}
+
+func TestMCPServer_OriginValidation_Integration(t *testing.T) {
+	// Test that Origin validation is enforced on all endpoints
+	cfg := &config.Config{
+		DevMode:        false,
+		AllowedOrigins: []string{"https://allowed.com"},
+		Auth0: config.Auth0Config{
+			Domain: "test.auth0.com",
+			SyncAPI: &config.SyncAPIConfig{
+				Audience: "https://api.test.com",
+			},
+		},
+		APIBaseURL: "http://localhost:8081",
+	}
+
+	server := NewMCPServer(cfg)
+
+	tests := []struct {
+		name    string
+		handler func(http.ResponseWriter, *http.Request)
+		method  string
+		path    string
+	}{
+		{
+			name:    "POST /mcp rejects bad origin",
+			handler: server.handleMCPPost,
+			method:  "POST",
+			path:    "/mcp",
+		},
+		{
+			name:    "GET /mcp rejects bad origin",
+			handler: server.handleMCPGet,
+			method:  "GET",
+			path:    "/mcp",
+		},
+		{
+			name:    "DELETE /mcp rejects bad origin",
+			handler: server.handleMCPDelete,
+			method:  "DELETE",
+			path:    "/mcp",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			req.Header.Set("Origin", "https://malicious.com")
+			req.Header.Set("Mcp-Protocol-Version", "2025-03-26")
+
+			w := httptest.NewRecorder()
+			tt.handler(w, req)
+
+			if w.Code != http.StatusForbidden {
+				t.Errorf("Expected status %d (Forbidden), got %d", http.StatusForbidden, w.Code)
+			}
+
+			if !bytes.Contains(w.Body.Bytes(), []byte("origin not allowed")) {
+				t.Errorf("Expected error message 'origin not allowed', got: %s", w.Body.String())
+			}
+		})
+	}
+}
