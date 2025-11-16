@@ -150,7 +150,6 @@ func (s *Server) GetNote(w http.ResponseWriter, r *http.Request) {
 
 	// Check if deleted
 	if item.DeletedAt != nil && !includeDeleted {
-		w.WriteHeader(410) // Gone
 		writeJSON(w, 410, map[string]any{
 			"error":     "note deleted",
 			"deletedAt": item.DeletedAt,
@@ -482,7 +481,6 @@ func (s *Server) GetTask(w http.ResponseWriter, r *http.Request) {
 
 	// Check if deleted
 	if item.DeletedAt != nil && !includeDeleted {
-		w.WriteHeader(410) // Gone
 		writeJSON(w, 410, map[string]any{
 			"error":     "task deleted",
 			"deletedAt": item.DeletedAt,
@@ -812,7 +810,6 @@ func (s *Server) GetChat(w http.ResponseWriter, r *http.Request) {
 
 	// Check if deleted
 	if item.DeletedAt != nil && !includeDeleted {
-		w.WriteHeader(410) // Gone
 		writeJSON(w, 410, map[string]any{
 			"error":     "chat deleted",
 			"deletedAt": item.DeletedAt,
@@ -1140,7 +1137,6 @@ func (s *Server) GetComment(w http.ResponseWriter, r *http.Request) {
 
 	// Check if deleted
 	if item.DeletedAt != nil && !includeDeleted {
-		w.WriteHeader(410) // Gone
 		writeJSON(w, 410, map[string]any{
 			"error":     "comment deleted",
 			"deletedAt": item.DeletedAt,
@@ -1468,7 +1464,6 @@ func (s *Server) GetChatMessage(w http.ResponseWriter, r *http.Request) {
 
 	// Check if deleted
 	if item.DeletedAt != nil && !includeDeleted {
-		w.WriteHeader(410) // Gone
 		writeJSON(w, 410, map[string]any{
 			"error":     "chat message deleted",
 			"deletedAt": item.DeletedAt,

@@ -257,11 +257,7 @@ func (s *CommentService) GetComment(ctx context.Context, userID string, uid uuid
 		return nil, err
 	}
 
-	// Check if deleted
-	if deletedAtMs != nil && !includeDeleted {
-		return nil, nil // Return nil to signal 410 Gone
-	}
-
+	// Always return the item (even if deleted) - handler will decide 410 vs 200
 	item := &RESTItem{
 		UID:       uid.String(),
 		Version:   version,
