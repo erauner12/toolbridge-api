@@ -234,8 +234,8 @@ func (s *CommentService) PullComments(ctx context.Context, userID string, cursor
 // REST-specific methods
 
 // GetComment retrieves a single comment by UID
-// Returns 404 if not found, 410 if deleted (unless includeDeleted=true)
-func (s *CommentService) GetComment(ctx context.Context, userID string, uid uuid.UUID, includeDeleted bool) (*RESTItem, error) {
+// Returns the item regardless of deletion status (handler decides 404 vs 410)
+func (s *CommentService) GetComment(ctx context.Context, userID string, uid uuid.UUID) (*RESTItem, error) {
 	logger := log.With().Logger()
 
 	var payload map[string]any

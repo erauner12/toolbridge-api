@@ -206,8 +206,8 @@ func (s *ChatMessageService) PullChatMessages(ctx context.Context, userID string
 // REST-specific methods
 
 // GetChatMessage retrieves a single chat message by UID
-// Returns 404 if not found, 410 if deleted (unless includeDeleted=true)
-func (s *ChatMessageService) GetChatMessage(ctx context.Context, userID string, uid uuid.UUID, includeDeleted bool) (*RESTItem, error) {
+// Returns the item regardless of deletion status (handler decides 404 vs 410)
+func (s *ChatMessageService) GetChatMessage(ctx context.Context, userID string, uid uuid.UUID) (*RESTItem, error) {
 	logger := log.With().Logger()
 
 	var payload map[string]any

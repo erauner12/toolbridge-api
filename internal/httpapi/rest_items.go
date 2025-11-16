@@ -135,8 +135,7 @@ func (s *Server) GetNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	includeDeleted := parseIncludeDeleted(r)
-	item, err := s.NoteSvc.GetNote(ctx, userID, uid, includeDeleted)
+	item, err := s.NoteSvc.GetNote(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get note")
 		writeError(w, r, 500, "failed to get note")
@@ -169,6 +168,25 @@ func (s *Server) UpdateNote(w http.ResponseWriter, r *http.Request) {
 	uid, ok := parseUIDParam(r)
 	if !ok {
 		writeError(w, r, 400, "invalid UID")
+		return
+	}
+
+	// Check if note exists and is not deleted
+	existing, err := s.NoteSvc.GetNote(ctx, userID, uid)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to get note for update")
+		writeError(w, r, 500, "failed to get note")
+		return
+	}
+	if existing == nil {
+		writeError(w, r, 404, "note not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "note deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -216,7 +234,7 @@ func (s *Server) PatchNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing note
-	existing, err := s.NoteSvc.GetNote(ctx, userID, uid, false)
+	existing, err := s.NoteSvc.GetNote(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get note for patch")
 		writeError(w, r, 500, "failed to get note")
@@ -224,6 +242,13 @@ func (s *Server) PatchNote(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "note not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "note deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -276,7 +301,7 @@ func (s *Server) DeleteNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing note to get payload
-	existing, err := s.NoteSvc.GetNote(ctx, userID, uid, false)
+	existing, err := s.NoteSvc.GetNote(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get note for delete")
 		writeError(w, r, 500, "failed to get note")
@@ -284,6 +309,13 @@ func (s *Server) DeleteNote(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "note not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "note already deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -317,7 +349,7 @@ func (s *Server) ArchiveNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing note
-	existing, err := s.NoteSvc.GetNote(ctx, userID, uid, false)
+	existing, err := s.NoteSvc.GetNote(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get note for archive")
 		writeError(w, r, 500, "failed to get note")
@@ -325,6 +357,13 @@ func (s *Server) ArchiveNote(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "note not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "note deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -365,7 +404,7 @@ func (s *Server) ProcessNote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing note
-	existing, err := s.NoteSvc.GetNote(ctx, userID, uid, false)
+	existing, err := s.NoteSvc.GetNote(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get note for process")
 		writeError(w, r, 500, "failed to get note")
@@ -373,6 +412,13 @@ func (s *Server) ProcessNote(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "note not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "note deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -466,8 +512,7 @@ func (s *Server) GetTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	includeDeleted := parseIncludeDeleted(r)
-	item, err := s.TaskSvc.GetTask(ctx, userID, uid, includeDeleted)
+	item, err := s.TaskSvc.GetTask(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get task")
 		writeError(w, r, 500, "failed to get task")
@@ -500,6 +545,25 @@ func (s *Server) UpdateTask(w http.ResponseWriter, r *http.Request) {
 	uid, ok := parseUIDParam(r)
 	if !ok {
 		writeError(w, r, 400, "invalid UID")
+		return
+	}
+
+	// Check if task exists and is not deleted
+	existing, err := s.TaskSvc.GetTask(ctx, userID, uid)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to get task for update")
+		writeError(w, r, 500, "failed to get task")
+		return
+	}
+	if existing == nil {
+		writeError(w, r, 404, "task not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "task deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -547,7 +611,7 @@ func (s *Server) PatchTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing task
-	existing, err := s.TaskSvc.GetTask(ctx, userID, uid, false)
+	existing, err := s.TaskSvc.GetTask(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get task for patch")
 		writeError(w, r, 500, "failed to get task")
@@ -555,6 +619,13 @@ func (s *Server) PatchTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "task not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "task deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -607,7 +678,7 @@ func (s *Server) DeleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing task to get payload
-	existing, err := s.TaskSvc.GetTask(ctx, userID, uid, false)
+	existing, err := s.TaskSvc.GetTask(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get task for delete")
 		writeError(w, r, 500, "failed to get task")
@@ -615,6 +686,13 @@ func (s *Server) DeleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "task not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "task already deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -648,7 +726,7 @@ func (s *Server) ArchiveTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing task
-	existing, err := s.TaskSvc.GetTask(ctx, userID, uid, false)
+	existing, err := s.TaskSvc.GetTask(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get task for archive")
 		writeError(w, r, 500, "failed to get task")
@@ -656,6 +734,13 @@ func (s *Server) ArchiveTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "task not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "task deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -696,7 +781,7 @@ func (s *Server) ProcessTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing task
-	existing, err := s.TaskSvc.GetTask(ctx, userID, uid, false)
+	existing, err := s.TaskSvc.GetTask(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get task for process")
 		writeError(w, r, 500, "failed to get task")
@@ -704,6 +789,13 @@ func (s *Server) ProcessTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "task not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "task deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -795,8 +887,7 @@ func (s *Server) GetChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	includeDeleted := parseIncludeDeleted(r)
-	item, err := s.ChatSvc.GetChat(ctx, userID, uid, includeDeleted)
+	item, err := s.ChatSvc.GetChat(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get chat")
 		writeError(w, r, 500, "failed to get chat")
@@ -829,6 +920,25 @@ func (s *Server) UpdateChat(w http.ResponseWriter, r *http.Request) {
 	uid, ok := parseUIDParam(r)
 	if !ok {
 		writeError(w, r, 400, "invalid UID")
+		return
+	}
+
+	// Check if chat exists and is not deleted
+	existing, err := s.ChatSvc.GetChat(ctx, userID, uid)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to get chat for update")
+		writeError(w, r, 500, "failed to get chat")
+		return
+	}
+	if existing == nil {
+		writeError(w, r, 404, "chat not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "chat deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -876,7 +986,7 @@ func (s *Server) PatchChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing chat
-	existing, err := s.ChatSvc.GetChat(ctx, userID, uid, false)
+	existing, err := s.ChatSvc.GetChat(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get chat for patch")
 		writeError(w, r, 500, "failed to get chat")
@@ -884,6 +994,13 @@ func (s *Server) PatchChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "chat not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "chat deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -936,7 +1053,7 @@ func (s *Server) DeleteChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing chat to get payload
-	existing, err := s.ChatSvc.GetChat(ctx, userID, uid, false)
+	existing, err := s.ChatSvc.GetChat(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get chat for delete")
 		writeError(w, r, 500, "failed to get chat")
@@ -944,6 +1061,13 @@ func (s *Server) DeleteChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "chat not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "chat already deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -977,7 +1101,7 @@ func (s *Server) ArchiveChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing chat
-	existing, err := s.ChatSvc.GetChat(ctx, userID, uid, false)
+	existing, err := s.ChatSvc.GetChat(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get chat for archive")
 		writeError(w, r, 500, "failed to get chat")
@@ -985,6 +1109,13 @@ func (s *Server) ArchiveChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "chat not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "chat deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -1025,7 +1156,7 @@ func (s *Server) ProcessChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing chat
-	existing, err := s.ChatSvc.GetChat(ctx, userID, uid, false)
+	existing, err := s.ChatSvc.GetChat(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get chat for process")
 		writeError(w, r, 500, "failed to get chat")
@@ -1033,6 +1164,13 @@ func (s *Server) ProcessChat(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "chat not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "chat deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -1122,8 +1260,7 @@ func (s *Server) GetComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	includeDeleted := parseIncludeDeleted(r)
-	item, err := s.CommentSvc.GetComment(ctx, userID, uid, includeDeleted)
+	item, err := s.CommentSvc.GetComment(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get comment")
 		writeError(w, r, 500, "failed to get comment")
@@ -1156,6 +1293,25 @@ func (s *Server) UpdateComment(w http.ResponseWriter, r *http.Request) {
 	uid, ok := parseUIDParam(r)
 	if !ok {
 		writeError(w, r, 400, "invalid UID")
+		return
+	}
+
+	// Check if comment exists and is not deleted
+	existing, err := s.CommentSvc.GetComment(ctx, userID, uid)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to get comment for update")
+		writeError(w, r, 500, "failed to get comment")
+		return
+	}
+	if existing == nil {
+		writeError(w, r, 404, "comment not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "comment deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -1203,7 +1359,7 @@ func (s *Server) PatchComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing comment
-	existing, err := s.CommentSvc.GetComment(ctx, userID, uid, false)
+	existing, err := s.CommentSvc.GetComment(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get comment for patch")
 		writeError(w, r, 500, "failed to get comment")
@@ -1211,6 +1367,13 @@ func (s *Server) PatchComment(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "comment not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "comment deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -1263,7 +1426,7 @@ func (s *Server) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing comment to get payload
-	existing, err := s.CommentSvc.GetComment(ctx, userID, uid, false)
+	existing, err := s.CommentSvc.GetComment(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get comment for delete")
 		writeError(w, r, 500, "failed to get comment")
@@ -1271,6 +1434,13 @@ func (s *Server) DeleteComment(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "comment not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "comment already deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -1304,7 +1474,7 @@ func (s *Server) ArchiveComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing comment
-	existing, err := s.CommentSvc.GetComment(ctx, userID, uid, false)
+	existing, err := s.CommentSvc.GetComment(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get comment for archive")
 		writeError(w, r, 500, "failed to get comment")
@@ -1312,6 +1482,13 @@ func (s *Server) ArchiveComment(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "comment not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "comment deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -1352,7 +1529,7 @@ func (s *Server) ProcessComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing comment
-	existing, err := s.CommentSvc.GetComment(ctx, userID, uid, false)
+	existing, err := s.CommentSvc.GetComment(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get comment for process")
 		writeError(w, r, 500, "failed to get comment")
@@ -1360,6 +1537,13 @@ func (s *Server) ProcessComment(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "comment not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "comment deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -1449,8 +1633,7 @@ func (s *Server) GetChatMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	includeDeleted := parseIncludeDeleted(r)
-	item, err := s.ChatMessageSvc.GetChatMessage(ctx, userID, uid, includeDeleted)
+	item, err := s.ChatMessageSvc.GetChatMessage(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get chat message")
 		writeError(w, r, 500, "failed to get chat message")
@@ -1483,6 +1666,25 @@ func (s *Server) UpdateChatMessage(w http.ResponseWriter, r *http.Request) {
 	uid, ok := parseUIDParam(r)
 	if !ok {
 		writeError(w, r, 400, "invalid UID")
+		return
+	}
+
+	// Check if chat message exists and is not deleted
+	existing, err := s.ChatMessageSvc.GetChatMessage(ctx, userID, uid)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to get chat message for update")
+		writeError(w, r, 500, "failed to get chat message")
+		return
+	}
+	if existing == nil {
+		writeError(w, r, 404, "chat message not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "chat message deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -1530,7 +1732,7 @@ func (s *Server) PatchChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing chat message
-	existing, err := s.ChatMessageSvc.GetChatMessage(ctx, userID, uid, false)
+	existing, err := s.ChatMessageSvc.GetChatMessage(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get chat message for patch")
 		writeError(w, r, 500, "failed to get chat message")
@@ -1538,6 +1740,13 @@ func (s *Server) PatchChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "chat message not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "chat message deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -1590,7 +1799,7 @@ func (s *Server) DeleteChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing chat message to get payload
-	existing, err := s.ChatMessageSvc.GetChatMessage(ctx, userID, uid, false)
+	existing, err := s.ChatMessageSvc.GetChatMessage(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get chat message for delete")
 		writeError(w, r, 500, "failed to get chat message")
@@ -1598,6 +1807,13 @@ func (s *Server) DeleteChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "chat message not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "chat message already deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -1631,7 +1847,7 @@ func (s *Server) ArchiveChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing chat message
-	existing, err := s.ChatMessageSvc.GetChatMessage(ctx, userID, uid, false)
+	existing, err := s.ChatMessageSvc.GetChatMessage(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get chat message for archive")
 		writeError(w, r, 500, "failed to get chat message")
@@ -1639,6 +1855,13 @@ func (s *Server) ArchiveChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "chat message not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "chat message deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
@@ -1679,7 +1902,7 @@ func (s *Server) ProcessChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch existing chat message
-	existing, err := s.ChatMessageSvc.GetChatMessage(ctx, userID, uid, false)
+	existing, err := s.ChatMessageSvc.GetChatMessage(ctx, userID, uid)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to get chat message for process")
 		writeError(w, r, 500, "failed to get chat message")
@@ -1687,6 +1910,13 @@ func (s *Server) ProcessChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing == nil {
 		writeError(w, r, 404, "chat message not found")
+		return
+	}
+	if existing.DeletedAt != nil {
+		writeJSON(w, 410, map[string]any{
+			"error":     "chat message deleted",
+			"deletedAt": existing.DeletedAt,
+		})
 		return
 	}
 
