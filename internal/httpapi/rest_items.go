@@ -54,12 +54,22 @@ func parseUIDParam(r *http.Request) (uuid.UUID, bool) {
 }
 
 // parseIfMatchHeader extracts version from If-Match header
+// Handles both quoted ETags (If-Match: "5") and unquoted (If-Match: 5)
+// per RFC 7232 section 2.3
 func parseIfMatchHeader(r *http.Request) (int, bool) {
 	ifMatch := r.Header.Get("If-Match")
 	if ifMatch == "" {
 		return 0, false
 	}
-	version, err := strconv.Atoi(ifMatch)
+
+	// Strip surrounding quotes if present (ETags are typically quoted per RFC 7232)
+	// This handles both `If-Match: "5"` and `If-Match: 5`
+	etag := ifMatch
+	if len(etag) >= 2 && etag[0] == '"' && etag[len(etag)-1] == '"' {
+		etag = etag[1 : len(etag)-1]
+	}
+
+	version, err := strconv.Atoi(etag)
 	if err != nil {
 		return 0, false
 	}

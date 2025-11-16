@@ -360,3 +360,174 @@ func toJSONReader(payload interface{}) *bytes.Reader {
 	data, _ := json.Marshal(payload)
 	return bytes.NewReader(data)
 }
+
+// TestParseIfMatchHeader tests the ETag parsing from If-Match header
+func TestParseIfMatchHeader(t *testing.T) {
+	tests := []struct {
+		name          string
+		ifMatchValue  string
+		wantVersion   int
+		wantOk        bool
+		description   string
+	}{
+		{
+			name:         "quoted_etag_rfc_compliant",
+			ifMatchValue: `"5"`,
+			wantVersion:  5,
+			wantOk:       true,
+			description:  "RFC 7232 compliant quoted ETag should work",
+		},
+		{
+			name:         "unquoted_etag",
+			ifMatchValue: "5",
+			wantVersion:  5,
+			wantOk:       true,
+			description:  "Unquoted ETag should also work for backward compatibility",
+		},
+		{
+			name:         "quoted_zero",
+			ifMatchValue: `"0"`,
+			wantVersion:  0,
+			wantOk:       true,
+			description:  "Quoted zero should parse correctly",
+		},
+		{
+			name:         "empty_header",
+			ifMatchValue: "",
+			wantVersion:  0,
+			wantOk:       false,
+			description:  "Empty header should return false",
+		},
+		{
+			name:         "invalid_number",
+			ifMatchValue: `"abc"`,
+			wantVersion:  0,
+			wantOk:       false,
+			description:  "Non-numeric ETag should return false",
+		},
+		{
+			name:         "quoted_large_version",
+			ifMatchValue: `"12345"`,
+			wantVersion:  12345,
+			wantOk:       true,
+			description:  "Quoted large version number should work",
+		},
+		{
+			name:         "partially_quoted",
+			ifMatchValue: `"5`,
+			wantVersion:  0,
+			wantOk:       false,
+			description:  "Partially quoted value should fail",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test", nil)
+			if tt.ifMatchValue != "" {
+				req.Header.Set("If-Match", tt.ifMatchValue)
+			}
+
+			gotVersion, gotOk := parseIfMatchHeader(req)
+
+			if gotVersion != tt.wantVersion {
+				t.Errorf("%s: parseIfMatchHeader() version = %v, want %v", tt.description, gotVersion, tt.wantVersion)
+			}
+			if gotOk != tt.wantOk {
+				t.Errorf("%s: parseIfMatchHeader() ok = %v, want %v", tt.description, gotOk, tt.wantOk)
+			}
+		})
+	}
+}
+
+// TestOptimisticLocking_QuotedETag tests that optimistic locking works with quoted ETags
+func TestOptimisticLocking_QuotedETag(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := getTestDB(t)
+	defer pool.Close()
+
+	srv := &Server{
+		DB:              pool,
+		RateLimitConfig: DefaultRateLimitConfig,
+		NoteSvc:         syncservice.NewNoteService(pool),
+	}
+	router := srv.Routes(auth.JWTCfg{HS256Secret: "test-secret", DevMode: true})
+
+	ctx := context.Background()
+	userID := testUserID
+
+	// Create a note
+	noteUID := uuid.New()
+	notePayload := map[string]any{
+		"uid":     noteUID.String(),
+		"title":   "Original Title",
+		"content": "Original content",
+	}
+
+	item, err := srv.NoteSvc.ApplyNoteMutation(ctx, userID, notePayload, syncservice.MutationOpts{})
+	if err != nil {
+		t.Fatalf("Failed to create note: %v", err)
+	}
+
+	currentVersion := item.Version
+
+	t.Run("quoted_etag_allows_update_with_correct_version", func(t *testing.T) {
+		updatePayload := map[string]any{"title": "Updated Title"}
+		body := toJSONReader(updatePayload)
+
+		req := httptest.NewRequest("PATCH", fmt.Sprintf("/v1/notes/%s", noteUID), body)
+		req.Header.Set("X-Debug-Sub", testUserID)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("If-Match", fmt.Sprintf(`"%d"`, currentVersion)) // Quoted ETag
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected 200 OK with quoted ETag, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("quoted_etag_rejects_stale_version", func(t *testing.T) {
+		updatePayload := map[string]any{"title": "Stale Update"}
+		body := toJSONReader(updatePayload)
+
+		req := httptest.NewRequest("PATCH", fmt.Sprintf("/v1/notes/%s", noteUID), body)
+		req.Header.Set("X-Debug-Sub", testUserID)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("If-Match", `"1"`) // Stale quoted ETag
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusPreconditionFailed {
+			t.Errorf("Expected 412 Precondition Failed with stale quoted ETag, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("unquoted_etag_still_works", func(t *testing.T) {
+		// Refresh current version
+		currentItem, err := srv.NoteSvc.GetNote(ctx, userID, noteUID)
+		if err != nil {
+			t.Fatalf("Failed to get note: %v", err)
+		}
+
+		updatePayload := map[string]any{"title": "Another Update"}
+		body := toJSONReader(updatePayload)
+
+		req := httptest.NewRequest("PATCH", fmt.Sprintf("/v1/notes/%s", noteUID), body)
+		req.Header.Set("X-Debug-Sub", testUserID)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("If-Match", fmt.Sprintf("%d", currentItem.Version)) // Unquoted ETag
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("Expected 200 OK with unquoted ETag, got %d: %s", w.Code, w.Body.String())
+		}
+	})
+}
