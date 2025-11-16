@@ -25,7 +25,7 @@ const (
 
 // HTTPClient wraps http.Client with authentication and retry logic
 // Automatically injects:
-// - Authorization: Bearer <token>
+// - Authorization: Bearer <token> (production) OR X-Debug-Sub (dev mode)
 // - X-Sync-Session: <session-id>
 // - X-Sync-Epoch: <epoch>
 // - X-Correlation-ID: <uuid>
@@ -33,37 +33,31 @@ const (
 // Handles retries for:
 // - 401 Unauthorized: invalidate token cache, retry once
 // - 409 Conflict (epoch mismatch): refresh session, retry once
+// - 428 Precondition Required: session missing/expired, refresh session, retry once
 // - 429 Too Many Requests: respect Retry-After, exponential backoff
+//
+// Dev Mode: If tokenProvider is nil, the client operates in dev mode and uses
+// X-Debug-Sub header from the session manager instead of Bearer tokens.
 type HTTPClient struct {
 	baseURL       string
 	httpClient    *http.Client
-	tokenProvider TokenProvider
-	sessionMgr    SessionProvider
+	tokenProvider TokenProvider  // nil in dev mode
+	sessionMgr    SessionProvider // Required for session headers
 	audience      string
-	devMode       bool   // If true, use X-Debug-Sub header instead of Bearer token
-	debugSub      string // Subject to use in dev mode
+	debugSub      string // Subject to use in dev mode (from session manager)
 }
 
 // NewHTTPClient creates a new authenticated HTTP client
-func NewHTTPClient(baseURL string, tokenProvider TokenProvider, sessionMgr SessionProvider, audience string) *HTTPClient {
+// For production: provide tokenProvider, sessionMgr, and audience; pass "" for debugSub
+// For dev mode: pass nil for tokenProvider, use NewDevSessionManager for sessionMgr, provide debugSub
+func NewHTTPClient(baseURL string, tokenProvider TokenProvider, sessionMgr SessionProvider, audience, debugSub string) *HTTPClient {
 	return &HTTPClient{
 		baseURL:       baseURL,
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
 		tokenProvider: tokenProvider,
 		sessionMgr:    sessionMgr,
 		audience:      audience,
-		devMode:       false,
-	}
-}
-
-// NewHTTPClientDevMode creates an HTTP client for dev mode (no Auth0)
-// Uses X-Debug-Sub header instead of Bearer token
-func NewHTTPClientDevMode(baseURL string, debugSub string) *HTTPClient {
-	return &HTTPClient{
-		baseURL:    baseURL,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		devMode:    true,
-		debugSub:   debugSub,
+		debugSub:      debugSub,
 	}
 }
 
@@ -96,10 +90,10 @@ func (c *HTTPClient) doWithRetry(ctx context.Context, req *http.Request, logger 
 	reqClone.Header.Set("X-Correlation-ID", correlationID)
 
 	// Inject authentication headers (fresh on each attempt)
-	if c.devMode {
+	if c.tokenProvider == nil {
 		// Dev mode: use X-Debug-Sub header
 		reqClone.Header.Set("X-Debug-Sub", c.debugSub)
-		logger.Debug().Str("debugSub", c.debugSub).Msg("using dev mode auth")
+		logger.Debug().Str("debugSub", c.debugSub).Msg("using dev mode auth (X-Debug-Sub)")
 	} else {
 		// Production mode: get Auth0 token
 		token, err := c.tokenProvider.GetToken(ctx, c.audience, "", false)
@@ -150,6 +144,9 @@ func (c *HTTPClient) doWithRetry(ctx context.Context, req *http.Request, logger 
 	case http.StatusConflict: // 409 (epoch mismatch or version mismatch)
 		return c.handleConflict(ctx, req, resp, logger, correlationID, retryCount)
 
+	case http.StatusPreconditionRequired: // 428 (session missing or expired)
+		return c.handlePreconditionRequired(ctx, req, resp, logger, correlationID, retryCount)
+
 	case http.StatusTooManyRequests: // 429
 		return c.handleRateLimit(ctx, req, resp, logger, correlationID, retryCount)
 
@@ -168,7 +165,7 @@ func (c *HTTPClient) handleUnauthorized(ctx context.Context, req *http.Request, 
 		return nil, fmt.Errorf("authentication failed after %d retries", retryCount)
 	}
 
-	if c.devMode {
+	if c.tokenProvider == nil {
 		// Dev mode: 401 is a real error (X-Debug-Sub not working)
 		logger.Error().Msg("401 in dev mode - check X-Debug-Sub header support")
 		return nil, fmt.Errorf("authentication failed in dev mode")
@@ -240,6 +237,29 @@ func (c *HTTPClient) handleEpochMismatch(ctx context.Context, req *http.Request,
 		Msg("Epoch mismatch - refreshing session and retrying")
 
 	// Invalidate session and retry (next call will create new session with new epoch)
+	c.sessionMgr.InvalidateSession()
+
+	return c.doWithRetry(ctx, req, logger, correlationID, retryCount+1)
+}
+
+// handlePreconditionRequired handles 428 Precondition Required (session missing or expired)
+func (c *HTTPClient) handlePreconditionRequired(ctx context.Context, req *http.Request, resp *http.Response, logger *zerolog.Logger, correlationID string, retryCount int) (*http.Response, error) {
+	resp.Body.Close()
+
+	if retryCount >= MaxRetries {
+		logger.Error().Msg("428 Precondition Required - max retries exceeded")
+		return nil, fmt.Errorf("session precondition failed after %d retries", retryCount)
+	}
+
+	if c.sessionMgr == nil {
+		// No session manager - can't recover
+		logger.Error().Msg("428 Precondition Required but no session manager configured")
+		return nil, fmt.Errorf("session required but no session manager configured")
+	}
+
+	logger.Warn().Msg("428 Precondition Required - session missing or expired, refreshing and retrying")
+
+	// Invalidate session and retry (next call will create new session)
 	c.sessionMgr.InvalidateSession()
 
 	return c.doWithRetry(ctx, req, logger, correlationID, retryCount+1)

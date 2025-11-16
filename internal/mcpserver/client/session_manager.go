@@ -13,11 +13,8 @@ import (
 )
 
 const (
-	// SessionCacheTTL is the client-side session cache duration (23 hours)
-	// Server-side TTL is 24 hours, so we refresh 1 hour early for safety
-	SessionCacheTTL = 23 * time.Hour
-
-	// SessionRefreshBuffer is the time before expiry to proactively refresh
+	// SessionRefreshBuffer is the time before expiry to proactively refresh.
+	// We check 1 minute before the server's expiresAt to ensure continuity.
 	SessionRefreshBuffer = 1 * time.Minute
 )
 
@@ -29,19 +26,33 @@ type SessionManager struct {
 	httpClient    *http.Client
 	tokenProvider TokenProvider
 	audience      string
+	devMode       bool   // If true, use X-Debug-Sub instead of Bearer token
+	debugSub      string // Subject to use in dev mode
 
 	// Cached session (keyed by user ID in the future; single session for now)
 	cachedSession *Session
 	cacheExpiry   time.Time
 }
 
-// NewSessionManager creates a new session manager
+// NewSessionManager creates a new session manager for production mode (with Auth0)
 func NewSessionManager(baseURL string, tokenProvider TokenProvider, audience string) *SessionManager {
 	return &SessionManager{
 		baseURL:       baseURL,
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
 		tokenProvider: tokenProvider,
 		audience:      audience,
+		devMode:       false,
+	}
+}
+
+// NewDevSessionManager creates a new session manager for dev mode (with X-Debug-Sub)
+// This allows dev mode to create and manage sessions without Auth0
+func NewDevSessionManager(baseURL string, debugSub string) *SessionManager {
+	return &SessionManager{
+		baseURL:    baseURL,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+		devMode:    true,
+		debugSub:   debugSub,
 	}
 }
 
@@ -91,12 +102,6 @@ func (sm *SessionManager) createSession(ctx context.Context) (*Session, error) {
 		return sm.cachedSession, nil
 	}
 
-	// Get auth token
-	token, err := sm.tokenProvider.GetToken(ctx, sm.audience, "", false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get auth token: %w", err)
-	}
-
 	// Create session request
 	url := sm.baseURL + "/v1/sync/sessions"
 	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
@@ -104,10 +109,25 @@ func (sm *SessionManager) createSession(ctx context.Context) (*Session, error) {
 		return nil, err
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
 	req.Header.Set("Content-Type", "application/json")
 
-	log.Debug().Str("url", url).Msg("creating new session")
+	// Set auth header based on mode
+	if sm.devMode {
+		// Dev mode: use X-Debug-Sub header
+		req.Header.Set("X-Debug-Sub", sm.debugSub)
+		log.Debug().
+			Str("url", url).
+			Str("debugSub", sm.debugSub).
+			Msg("creating new session (dev mode)")
+	} else {
+		// Production mode: get Auth0 token
+		token, err := sm.tokenProvider.GetToken(ctx, sm.audience, "", false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get auth token: %w", err)
+		}
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token.AccessToken))
+		log.Debug().Str("url", url).Msg("creating new session")
+	}
 
 	// Execute request
 	resp, err := sm.httpClient.Do(req)
@@ -151,14 +171,15 @@ func (sm *SessionManager) createSession(ctx context.Context) (*Session, error) {
 		ExpiresAt: sessionResp.ExpiresAt,
 	}
 
-	// Cache with 23-hour TTL (server TTL is 24 hours)
+	// Cache using server's expiresAt timestamp
+	// SessionRefreshBuffer ensures we refresh proactively before expiry
 	sm.cachedSession = session
-	sm.cacheExpiry = session.CreatedAt.Add(SessionCacheTTL)
+	sm.cacheExpiry = session.ExpiresAt
 
 	log.Info().
 		Str("sessionId", session.ID).
 		Int("epoch", epoch).
-		Time("expiresAt", sm.cacheExpiry).
+		Time("expiresAt", session.ExpiresAt).
 		Msg("created new session")
 
 	return session, nil

@@ -31,7 +31,7 @@ func TestHTTPClient_HeaderInjection(t *testing.T) {
 		session: &Session{ID: "session-456", Epoch: 99},
 	}
 
-	client := NewHTTPClient(server.URL, tokenProvider, sessionMgr, "test-audience")
+	client := NewHTTPClient(server.URL, tokenProvider, sessionMgr, "test-audience", "")
 
 	req, _ := http.NewRequest("GET", server.URL+"/test", nil)
 	_, err := client.Do(context.Background(), req)
@@ -63,7 +63,11 @@ func TestHTTPClient_DevMode(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewHTTPClientDevMode(server.URL, "dev-user-123")
+	// Dev mode: nil tokenProvider, mock session manager, debugSub provided
+	sessionMgr := &mockSessionManager{
+		session: &Session{ID: "dev-session-1", Epoch: 1},
+	}
+	client := NewHTTPClient(server.URL, nil, sessionMgr, "", "dev-user-123")
 
 	req, _ := http.NewRequest("GET", server.URL+"/test", nil)
 	_, err := client.Do(context.Background(), req)
@@ -79,6 +83,14 @@ func TestHTTPClient_DevMode(t *testing.T) {
 	// Should NOT have Authorization header in dev mode
 	if auth := capturedHeaders.Get("Authorization"); auth != "" {
 		t.Errorf("unexpected Authorization header in dev mode: %s", auth)
+	}
+
+	// Should still have session headers
+	if session := capturedHeaders.Get("X-Sync-Session"); session != "dev-session-1" {
+		t.Errorf("unexpected X-Sync-Session header: %s", session)
+	}
+	if epoch := capturedHeaders.Get("X-Sync-Epoch"); epoch != "1" {
+		t.Errorf("unexpected X-Sync-Epoch header: %s", epoch)
 	}
 }
 
@@ -105,7 +117,7 @@ func TestHTTPClient_Retry401(t *testing.T) {
 		session: &Session{ID: "session-1", Epoch: 1},
 	}
 
-	client := NewHTTPClient(server.URL, tokenProvider, sessionMgr, "test-audience")
+	client := NewHTTPClient(server.URL, tokenProvider, sessionMgr, "test-audience", "")
 
 	req, _ := http.NewRequest("GET", server.URL+"/test", nil)
 	resp, err := client.Do(context.Background(), req)
@@ -154,7 +166,7 @@ func TestHTTPClient_Retry409EpochMismatch(t *testing.T) {
 		session: &Session{ID: "session-1", Epoch: 1},
 	}
 
-	client := NewHTTPClient(server.URL, tokenProvider, sessionMgr, "test-audience")
+	client := NewHTTPClient(server.URL, tokenProvider, sessionMgr, "test-audience", "")
 
 	req, _ := http.NewRequest("GET", server.URL+"/test", nil)
 	resp, err := client.Do(context.Background(), req)
@@ -199,7 +211,7 @@ func TestHTTPClient_Retry429(t *testing.T) {
 		session: &Session{ID: "session-1", Epoch: 1},
 	}
 
-	client := NewHTTPClient(server.URL, tokenProvider, sessionMgr, "test-audience")
+	client := NewHTTPClient(server.URL, tokenProvider, sessionMgr, "test-audience", "")
 
 	req, _ := http.NewRequest("GET", server.URL+"/test", nil)
 	start := time.Now()
@@ -224,6 +236,51 @@ func TestHTTPClient_Retry429(t *testing.T) {
 	}
 }
 
+func TestHTTPClient_Retry428(t *testing.T) {
+	callCount := 0
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			// First call: return 428 (session missing/expired)
+			w.WriteHeader(http.StatusPreconditionRequired)
+			return
+		}
+		// Second call: return success
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	tokenProvider := &mockTokenProvider{
+		token: &auth.TokenResult{AccessToken: "test-token"},
+	}
+
+	sessionMgr := &mockSessionManager{
+		session: &Session{ID: "session-1", Epoch: 1},
+	}
+
+	client := NewHTTPClient(server.URL, tokenProvider, sessionMgr, "test-audience", "")
+
+	req, _ := http.NewRequest("GET", server.URL+"/test", nil)
+	resp, err := client.Do(context.Background(), req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 after retry, got %d", resp.StatusCode)
+	}
+
+	if callCount != 2 {
+		t.Errorf("expected 2 API calls (428 + retry), got %d", callCount)
+	}
+
+	// Session should have been invalidated
+	if sessionMgr.invalidateCalls != 1 {
+		t.Errorf("expected 1 session invalidation, got %d", sessionMgr.invalidateCalls)
+	}
+}
+
 func TestHTTPClient_MaxRetries(t *testing.T) {
 	callCount := 0
 
@@ -242,7 +299,7 @@ func TestHTTPClient_MaxRetries(t *testing.T) {
 		session: &Session{ID: "session-1", Epoch: 1},
 	}
 
-	client := NewHTTPClient(server.URL, tokenProvider, sessionMgr, "test-audience")
+	client := NewHTTPClient(server.URL, tokenProvider, sessionMgr, "test-audience", "")
 
 	req, _ := http.NewRequest("GET", server.URL+"/test", nil)
 	_, err := client.Do(context.Background(), req)
@@ -289,7 +346,7 @@ func TestHTTPClient_RequestCloning(t *testing.T) {
 		session: &Session{ID: "session-1", Epoch: 1},
 	}
 
-	client := NewHTTPClient(server.URL, tokenProvider, sessionMgr, "test-audience")
+	client := NewHTTPClient(server.URL, tokenProvider, sessionMgr, "test-audience", "")
 
 	reqBody := `{"test":"data"}`
 	req, _ := http.NewRequest("POST", server.URL+"/test", strings.NewReader(reqBody))

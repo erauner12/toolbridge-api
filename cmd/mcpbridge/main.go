@@ -204,7 +204,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 		audience := cfg.Auth0.SyncAPI.Audience
 		sessionMgr := client.NewSessionManager(cfg.APIBaseURL, broker, audience)
-		httpClient = client.NewHTTPClient(cfg.APIBaseURL, broker, sessionMgr, audience)
+		httpClient = client.NewHTTPClient(cfg.APIBaseURL, broker, sessionMgr, audience, "")
 
 		log.Info().
 			Str("apiBaseUrl", cfg.APIBaseURL).
@@ -213,10 +213,11 @@ func run(ctx context.Context, cfg *config.Config) error {
 	} else {
 		log.Info().Msg("Running in dev mode - Auth0 authentication bypassed")
 
-		// Phase 3: Initialize REST client in dev mode (no session management)
+		// Phase 3: Initialize REST client in dev mode with session management
 		// Uses X-Debug-Sub header instead of Bearer token
 		debugSub := "mcp-bridge-dev-user"
-		httpClient = client.NewHTTPClientDevMode(cfg.APIBaseURL, debugSub)
+		sessionMgr := client.NewDevSessionManager(cfg.APIBaseURL, debugSub)
+		httpClient = client.NewHTTPClient(cfg.APIBaseURL, nil, sessionMgr, "", debugSub)
 
 		log.Info().
 			Str("apiBaseUrl", cfg.APIBaseURL).
