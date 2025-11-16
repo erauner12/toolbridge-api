@@ -24,7 +24,13 @@ type MCPServer struct {
 
 // NewMCPServer creates a new MCP server
 func NewMCPServer(cfg *config.Config) *MCPServer {
-	jwtValidator := NewJWTValidator(cfg.Auth0.Domain, cfg.Auth0.SyncAPI.Audience)
+	var jwtValidator *JWTValidator
+
+	// Only create JWT validator if not in dev mode and Auth0 is configured
+	if !cfg.DevMode && cfg.Auth0.SyncAPI != nil {
+		jwtValidator = NewJWTValidator(cfg.Auth0.Domain, cfg.Auth0.SyncAPI.Audience)
+	}
+
 	sessionMgr := NewSessionManager(24 * time.Hour)
 
 	return &MCPServer{
@@ -99,6 +105,12 @@ func (s *MCPServer) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 
 	// If not using dev mode or no debug header, use JWT
 	if userID == "" {
+		// JWT validation required but validator not configured
+		if s.jwtValidator == nil {
+			s.sendError(w, nil, InternalError, "authentication not configured")
+			return
+		}
+
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			s.sendError(w, nil, InvalidRequest, "missing authorization header")
@@ -150,13 +162,13 @@ func (s *MCPServer) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 
 	session, err := s.sessionMgr.GetSession(sessionID)
 	if err != nil {
-		http.Error(w, "session not found", http.StatusNotFound)
+		s.sendError(w, req.ID, InvalidRequest, "session not found")
 		return
 	}
 
 	// Verify session belongs to this user
 	if session.UserID != userID {
-		http.Error(w, "session user mismatch", http.StatusForbidden)
+		s.sendError(w, req.ID, InvalidRequest, "session user mismatch")
 		return
 	}
 
@@ -262,6 +274,12 @@ func (s *MCPServer) handleMCPGet(w http.ResponseWriter, r *http.Request) {
 
 	// If not using dev mode or no debug header, use JWT
 	if userID == "" {
+		// JWT validation required but validator not configured
+		if s.jwtValidator == nil {
+			http.Error(w, "authentication not configured", http.StatusInternalServerError)
+			return
+		}
+
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
 			http.Error(w, "missing authorization header", http.StatusUnauthorized)
@@ -342,7 +360,7 @@ func (s *MCPServer) handleMCPDelete(w http.ResponseWriter, r *http.Request) {
 
 	// Optionally validate JWT here too
 	authHeader := r.Header.Get("Authorization")
-	if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+	if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") && s.jwtValidator != nil {
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		claims, err := s.jwtValidator.ValidateToken(tokenString)
 		if err == nil {
