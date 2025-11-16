@@ -564,6 +564,8 @@ func TestOptimisticLocking_QuotedETag(t *testing.T) {
 
 		req := httptest.NewRequest("PATCH", fmt.Sprintf("/v1/notes/%s", noteUID), body)
 		req.Header.Set("X-Debug-Sub", testUserSubject)
+		req.Header.Set("X-Sync-Session", session.ID)
+		req.Header.Set("X-Sync-Epoch", fmt.Sprintf("%d", session.Epoch))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("If-Match", fmt.Sprintf("%d", currentItem.Version)) // Unquoted ETag
 		w := httptest.NewRecorder()

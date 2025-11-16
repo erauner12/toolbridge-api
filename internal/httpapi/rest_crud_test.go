@@ -617,9 +617,9 @@ func TestOptimisticLocking(t *testing.T) {
 			w := httptest.NewRecorder()
 			router.ServeHTTP(w, req)
 
-			// Should get 409 Conflict for stale version
-			if w.Code != http.StatusConflict {
-				t.Errorf("Expected 409 Conflict for stale version, got %d. Body: %s", w.Code, w.Body.String())
+			// Should get 412 Precondition Failed when using If-Match with stale version (RFC 7232)
+			if w.Code != http.StatusPreconditionFailed {
+				t.Errorf("Expected 412 Precondition Failed for stale If-Match, got %d. Body: %s", w.Code, w.Body.String())
 			}
 
 			// Verify current version is still intact
