@@ -258,7 +258,7 @@ func (s *MCPServer) handleMCPGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create SSE stream
-	stream, err := NewSSEStream(w, sessionID)
+	stream, err := NewSSEStream(r.Context(), w, sessionID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

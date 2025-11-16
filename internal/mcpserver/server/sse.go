@@ -20,7 +20,7 @@ type SSEStream struct {
 }
 
 // NewSSEStream creates a new SSE stream
-func NewSSEStream(w http.ResponseWriter, sessionID string) (*SSEStream, error) {
+func NewSSEStream(ctx context.Context, w http.ResponseWriter, sessionID string) (*SSEStream, error) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		return nil, fmt.Errorf("streaming not supported")
@@ -32,13 +32,13 @@ func NewSSEStream(w http.ResponseWriter, sessionID string) (*SSEStream, error) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no") // Disable nginx buffering
 
-	ctx, cancel := context.WithCancel(context.Background())
+	streamCtx, cancel := context.WithCancel(ctx)
 
 	return &SSEStream{
 		w:         w,
 		flusher:   flusher,
 		sessionID: sessionID,
-		ctx:       ctx,
+		ctx:       streamCtx,
 		cancel:    cancel,
 	}, nil
 }
