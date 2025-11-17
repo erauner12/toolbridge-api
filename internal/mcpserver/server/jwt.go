@@ -84,7 +84,8 @@ type Claims struct {
 
 // ValidateToken validates a JWT token and returns claims
 // Falls back to token introspection if JWT parsing fails and introspector is configured
-func (v *JWTValidator) ValidateToken(tokenString string) (*Claims, bool, error) {
+// Context is used for introspection HTTP requests and respects cancellation
+func (v *JWTValidator) ValidateToken(ctx context.Context, tokenString string) (*Claims, bool, error) {
 	// Attempt JWT validation first (happy path for RS256 tokens)
 	claims, jwtErr := v.validateJWT(tokenString)
 	if jwtErr == nil {
@@ -101,8 +102,7 @@ func (v *JWTValidator) ValidateToken(tokenString string) (*Claims, bool, error) 
 		Err(jwtErr).
 		Msg("JWT validation failed, attempting token introspection fallback")
 
-	// Attempt introspection fallback
-	ctx := context.Background()
+	// Attempt introspection fallback with context propagation
 	claims, introspectErr := v.introspector.Introspect(ctx, tokenString)
 	if introspectErr != nil {
 		// Both paths failed - log warning with both errors

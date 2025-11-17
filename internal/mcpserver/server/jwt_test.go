@@ -78,7 +78,7 @@ func TestJWTValidator_IntrospectionFallback(t *testing.T) {
 	}
 
 	// Test with opaque token (JWT validation will fail, introspection should succeed)
-	claims, usedIntrospection, err := validator.ValidateToken("opaque-token-abc123")
+	claims, usedIntrospection, err := validator.ValidateToken(context.Background(), "opaque-token-abc123")
 
 	// Verify introspection was used
 	if err != nil {
@@ -275,7 +275,7 @@ func TestJWTValidator_NoIntrospectorConfigured(t *testing.T) {
 	}
 
 	// Attempt to validate opaque token (will fail JWT parsing, no introspection fallback)
-	_, usedIntrospection, err := validator.ValidateToken("opaque-token")
+	_, usedIntrospection, err := validator.ValidateToken(context.Background(), "opaque-token")
 
 	// Should fail with JWT error
 	if err == nil {

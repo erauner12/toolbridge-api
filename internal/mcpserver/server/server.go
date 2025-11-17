@@ -175,7 +175,7 @@ func (s *MCPServer) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 		}
 
 		tokenString = strings.TrimPrefix(authHeader, "Bearer ")
-		claims, usedIntrospection, err := s.jwtValidator.ValidateToken(tokenString)
+		claims, usedIntrospection, err := s.jwtValidator.ValidateToken(r.Context(), tokenString)
 		if err != nil {
 			log.Warn().Err(err).Bool("introspectionFallback", usedIntrospection).Msg("Access token validation failed")
 			s.sendError(w, nil, InvalidRequest, "invalid token")
@@ -386,7 +386,7 @@ func (s *MCPServer) handleMCPGet(w http.ResponseWriter, r *http.Request) {
 		}
 
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		claims, usedIntrospection, err := s.jwtValidator.ValidateToken(tokenString)
+		claims, usedIntrospection, err := s.jwtValidator.ValidateToken(r.Context(), tokenString)
 		if err != nil {
 			log.Warn().Err(err).Bool("introspectionFallback", usedIntrospection).Msg("Access token validation failed")
 			http.Error(w, "invalid token", http.StatusUnauthorized)
@@ -459,7 +459,7 @@ func (s *MCPServer) handleMCPDelete(w http.ResponseWriter, r *http.Request) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") && s.jwtValidator != nil {
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		claims, usedIntrospection, err := s.jwtValidator.ValidateToken(tokenString)
+		claims, usedIntrospection, err := s.jwtValidator.ValidateToken(r.Context(), tokenString)
 		if err == nil {
 			if usedIntrospection {
 				log.Debug().Str("sub", claims.Subject).Msg("Token validated via introspection")
