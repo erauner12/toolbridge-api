@@ -10,6 +10,7 @@ import (
 
 	"github.com/erauner12/toolbridge-api/internal/mcpserver/client"
 	"github.com/erauner12/toolbridge-api/internal/mcpserver/config"
+	"github.com/erauner12/toolbridge-api/internal/mcpserver/tools"
 	"github.com/rs/zerolog/log"
 )
 
@@ -19,7 +20,7 @@ type MCPServer struct {
 	httpServer   *http.Server
 	jwtValidator *JWTValidator
 	sessionMgr   *SessionManager
-	// toolRegistry will be added in Phase 5
+	toolRegistry *tools.Registry
 }
 
 // NewMCPServer creates a new MCP server
@@ -33,10 +34,15 @@ func NewMCPServer(cfg *config.Config) *MCPServer {
 
 	sessionMgr := NewSessionManager(24 * time.Hour)
 
+	// Create and register all tools
+	toolRegistry := tools.NewRegistry()
+	tools.RegisterAllTools(toolRegistry)
+
 	return &MCPServer{
 		config:       cfg,
 		jwtValidator: jwtValidator,
 		sessionMgr:   sessionMgr,
+		toolRegistry: toolRegistry,
 	}
 }
 
@@ -182,7 +188,7 @@ func (s *MCPServer) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 	httpClient := s.createRESTClient(tokenProvider, session.UserID)
 
 	// Route request to handler
-	s.handleJSONRPC(w, &req, session, httpClient)
+	s.handleJSONRPC(w, r, &req, session, httpClient)
 }
 
 // handleInitialize handles the initialize request
@@ -221,16 +227,47 @@ func (s *MCPServer) handleInitialize(w http.ResponseWriter, r *http.Request, req
 }
 
 // handleJSONRPC routes JSON-RPC requests to appropriate handlers
-func (s *MCPServer) handleJSONRPC(w http.ResponseWriter, req *JSONRPCRequest, session *MCPSession, httpClient *client.HTTPClient) {
-	// For Phase 4, we only implement basic methods
-	// Phase 5-6 will add tool registry and actual tool implementations
+func (s *MCPServer) handleJSONRPC(w http.ResponseWriter, r *http.Request, req *JSONRPCRequest, session *MCPSession, httpClient *client.HTTPClient) {
+	ctx := r.Context()
+	logger := log.With().
+		Str("sessionId", session.ID).
+		Str("userId", session.UserID).
+		Str("method", req.Method).
+		Logger()
 
 	switch req.Method {
 	case "tools/list":
-		// Return empty list for now
+		// Return all registered tools
+		toolDescriptors := s.toolRegistry.List()
 		result := map[string]interface{}{
-			"tools": []interface{}{},
+			"tools": toolDescriptors,
 		}
+		s.sendResult(w, req.ID, result)
+
+	case "tools/call":
+		// Parse tool call request
+		var callReq tools.CallRequest
+		if err := json.Unmarshal(req.Params, &callReq); err != nil {
+			s.sendError(w, req.ID, InvalidParams, "invalid tool call parameters")
+			return
+		}
+
+		// Create tool context
+		toolCtx := tools.NewToolContext(&logger, session.UserID, session.ID, httpClient, s.sessionMgr)
+
+		// Execute tool
+		result, err := s.toolRegistry.Call(ctx, toolCtx, callReq)
+		if err != nil {
+			// Check if it's a ToolError
+			if toolErr, ok := err.(*tools.ToolError); ok {
+				code, message, data := toolErr.ToJSONRPCError()
+				s.sendError(w, req.ID, code, message, data)
+			} else {
+				s.sendError(w, req.ID, InternalError, err.Error())
+			}
+			return
+		}
+
 		s.sendResult(w, req.ID, result)
 
 	case "ping":
@@ -438,17 +475,24 @@ func (s *MCPServer) validateOrigin(r *http.Request) bool {
 }
 
 // Helper functions
-func (s *MCPServer) sendError(w http.ResponseWriter, id json.RawMessage, code int, message string) {
+func (s *MCPServer) sendError(w http.ResponseWriter, id json.RawMessage, code int, message string, data ...json.RawMessage) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK) // JSON-RPC errors are still HTTP 200
+
+	errObj := &JSONRPCError{
+		Code:    code,
+		Message: message,
+	}
+
+	// Include data if provided
+	if len(data) > 0 && data[0] != nil {
+		errObj.Data = data[0]
+	}
 
 	response := JSONRPCResponse{
 		JSONRPC: "2.0",
 		ID:      id,
-		Error: &JSONRPCError{
-			Code:    code,
-			Message: message,
-		},
+		Error:   errObj,
 	}
 
 	json.NewEncoder(w).Encode(response)
