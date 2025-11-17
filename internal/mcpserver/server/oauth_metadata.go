@@ -31,3 +31,35 @@ func (s *MCPServer) handleOAuthMetadata(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(metadata)
 }
+
+// handleOAuthProtectedResourceMetadata serves the OAuth protected resource metadata
+// Reference: RFC 9728 (OAuth 2.0 Protected Resource Metadata)
+// Required by MCP specification (June 2025 update) for Claude Desktop integration
+func (s *MCPServer) handleOAuthProtectedResourceMetadata(w http.ResponseWriter, r *http.Request) {
+	domain := s.config.Auth0.Domain
+	issuer := fmt.Sprintf("https://%s/", domain)
+
+	// Get the resource URL from the request or config
+	// In production, this should be the public-facing MCP endpoint URL
+	resourceURL := s.config.PublicURL
+	if resourceURL == "" {
+		// Fallback: construct from request
+		scheme := "https"
+		if r.TLS == nil {
+			scheme = "http"
+		}
+		resourceURL = fmt.Sprintf("%s://%s", scheme, r.Host)
+	}
+
+	metadata := map[string]interface{}{
+		"resource":               resourceURL,
+		"authorization_servers":  []string{issuer},
+		"bearer_methods_supported": []string{"header"},
+		"resource_documentation": fmt.Sprintf("%s/mcp", resourceURL),
+		// Optional: Specify supported signing algorithms (matches Auth0 JWKS)
+		"resource_signing_alg_values_supported": []string{"RS256"},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(metadata)
+}

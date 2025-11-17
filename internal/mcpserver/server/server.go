@@ -81,6 +81,7 @@ func (s *MCPServer) Start(addr string) error {
 
 	// OAuth discovery
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.handleOAuthMetadata)
+	mux.HandleFunc("GET /.well-known/oauth-protected-resource", s.handleOAuthProtectedResourceMetadata)
 
 	s.httpServer = &http.Server{
 		Addr:        addr,

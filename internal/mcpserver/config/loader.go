@@ -82,6 +82,11 @@ func applyEnvironmentOverrides(cfg *Config) {
 		cfg.APIBaseURL = apiURL
 	}
 
+	// Public URL (for OAuth metadata)
+	if publicURL := os.Getenv("MCP_PUBLIC_URL"); publicURL != "" {
+		cfg.PublicURL = publicURL
+	}
+
 	// Dev mode
 	if devMode := os.Getenv("MCP_DEV_MODE"); devMode == "true" || devMode == "1" {
 		cfg.DevMode = true
