@@ -6,6 +6,19 @@ import (
 	"net/http"
 )
 
+// DEPRECATION CANDIDATE: This entire file (oauth_metadata.go) could be removed once
+// trust-proxy mode becomes the primary deployment pattern. In trust-proxy mode:
+// - ToolHive proxy serves its own OAuth metadata endpoints (RFC 8414/RFC 9728)
+// - Clients discover OAuth endpoints from ToolHive, not ToolBridge
+// - ToolBridge doesn't advertise OAuth (it trusts pre-validated tokens)
+//
+// These endpoints are only needed for:
+// - Standalone deployments (direct client → ToolBridge without proxy)
+// - MCP clients that need to discover Auth0 OAuth endpoints
+//
+// If all deployments move behind ToolHive/similar proxies, this can be safely removed.
+// Note: Endpoints are already guarded to return 501 in trust-proxy mode.
+
 // handleOAuthMetadata serves the OAuth authorization server metadata
 // Reference: RFC 8414 (OAuth 2.0 Authorization Server Metadata)
 func (s *MCPServer) handleOAuthMetadata(w http.ResponseWriter, r *http.Request) {

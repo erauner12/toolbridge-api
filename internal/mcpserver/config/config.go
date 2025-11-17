@@ -17,13 +17,24 @@ type Config struct {
 }
 
 // Auth0Config mirrors the Dart Auth0Config structure
+//
+// DEPRECATION CANDIDATES in trust-proxy mode:
+// - Domain: Only needed for JWT validation and OAuth metadata (ToolHive handles both)
+// - Clients: Only needed for OAuth flow (ToolHive handles this)
+//
+// KEEP in trust-proxy mode:
+// - SyncAPI.Audience: Still needed for REST API calls (ToolBridge → ToolBridge REST API)
+//   Even in trust-proxy mode, ToolBridge needs to know what audience to use for backend API tokens
 type Auth0Config struct {
-	Domain  string                  `json:"domain"`
-	Clients map[string]ClientConfig `json:"clients"` // web, native, macos
+	Domain  string                  `json:"domain"`  // DEPRECATION CANDIDATE: unused in trust-proxy mode
+	Clients map[string]ClientConfig `json:"clients"` // DEPRECATION CANDIDATE: unused in trust-proxy mode
 	SyncAPI *SyncAPIConfig          `json:"syncApi,omitempty"`
 }
 
 // ClientConfig describes a single Auth0 client configuration
+//
+// DEPRECATION CANDIDATE: This entire struct is unused in trust-proxy mode.
+// OAuth client configuration is handled by ToolHive, not ToolBridge.
 type ClientConfig struct {
 	ClientID             string            `json:"clientId"`
 	RedirectURI          string            `json:"redirectUri,omitempty"`

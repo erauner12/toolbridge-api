@@ -15,6 +15,18 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// DEPRECATION CANDIDATE: This entire file (jwt.go) could be removed once trust-proxy
+// mode becomes the primary deployment pattern. In trust-proxy mode:
+// - ToolHive proxy validates JWTs using its own JWKS fetching
+// - ToolBridge parses JWT claims without cryptographic validation (parseJWTClaimsWithoutValidation)
+// - No need for JWTValidator, JWKS fetching, or key rotation logic
+//
+// This file is only needed for:
+// - Standalone deployments (direct client → ToolBridge without proxy)
+// - DevMode is false AND TrustToolhiveAuth is false
+//
+// If all deployments move behind ToolHive/similar proxies, this can be safely removed.
+
 // JWTValidator validates Auth0 JWT tokens
 type JWTValidator struct {
 	mu            sync.RWMutex
