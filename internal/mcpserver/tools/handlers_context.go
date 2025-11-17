@@ -96,8 +96,10 @@ func HandleDetachContext(ctx context.Context, tc *ToolContext, raw json.RawMessa
 
 func HandleListContext(ctx context.Context, tc *ToolContext, raw json.RawMessage) (interface{}, error) {
 	var params ListContextParams
-	if err := json.Unmarshal(raw, &params); err != nil {
-		return nil, NewToolError(ErrCodeInvalidParams, "Invalid parameters: "+err.Error(), nil)
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return nil, NewToolError(ErrCodeInvalidParams, "Invalid parameters: "+err.Error(), nil)
+		}
 	}
 	if err := params.Validate(); err != nil {
 		return nil, NewToolError(ErrCodeInvalidParams, err.Error(), nil)
@@ -125,8 +127,10 @@ func HandleListContext(ctx context.Context, tc *ToolContext, raw json.RawMessage
 
 func HandleClearContext(ctx context.Context, tc *ToolContext, raw json.RawMessage) (interface{}, error) {
 	var params ClearContextParams
-	if err := json.Unmarshal(raw, &params); err != nil {
-		return nil, NewToolError(ErrCodeInvalidParams, "Invalid parameters: "+err.Error(), nil)
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return nil, NewToolError(ErrCodeInvalidParams, "Invalid parameters: "+err.Error(), nil)
+		}
 	}
 	if err := params.Validate(); err != nil {
 		return nil, NewToolError(ErrCodeInvalidParams, err.Error(), nil)
