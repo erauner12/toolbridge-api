@@ -492,19 +492,84 @@ func (s *MCPServer) handleMCPDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optionally validate JWT here too
-	authHeader := r.Header.Get("Authorization")
-	if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") && s.jwtValidator != nil {
+	// Authenticate user and verify session ownership
+	var userID string
+
+	// Check for trust-proxy mode (ToolHive gateway)
+	if s.config.TrustToolhiveAuth {
+		// Trust that ToolHive validated the JWT, parse claims without verification
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			http.Error(w, "missing authorization header from proxy", http.StatusUnauthorized)
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		claims, _, err := parseJWTClaimsWithoutValidation(tokenString)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to parse JWT in trust-proxy mode")
+			http.Error(w, "invalid jwt format", http.StatusUnauthorized)
+			return
+		}
+
+		// Extract user ID from 'sub' claim
+		if sub, ok := claims["sub"].(string); ok && sub != "" {
+			userID = sub
+			log.Debug().Str("userId", userID).Msg("Using trust-proxy authentication (ToolHive)")
+		} else {
+			http.Error(w, "missing sub claim in jwt", http.StatusUnauthorized)
+			return
+		}
+	} else if s.config.DevMode {
+		// Check for dev mode
+		// In dev mode, allow X-Debug-Sub header as fallback
+		debugSub := r.Header.Get("X-Debug-Sub")
+		if debugSub != "" {
+			userID = debugSub
+			log.Debug().Str("userId", userID).Msg("Using dev mode authentication")
+		}
+	}
+
+	// If not using trust-proxy or dev mode, use JWT validation
+	if userID == "" {
+		// JWT validation required but validator not configured
+		if s.jwtValidator == nil {
+			http.Error(w, "authentication not configured", http.StatusInternalServerError)
+			return
+		}
+
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "missing authorization header", http.StatusUnauthorized)
+			return
+		}
+
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			http.Error(w, "invalid authorization header format", http.StatusUnauthorized)
+			return
+		}
+
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		claims, err := s.jwtValidator.ValidateToken(r.Context(), tokenString)
-		if err == nil {
-			// Verify session belongs to this user
-			session, err := s.sessionMgr.GetSession(sessionID)
-			if err == nil && session.UserID != claims.Subject {
-				http.Error(w, "session user mismatch", http.StatusForbidden)
-				return
-			}
+		if err != nil {
+			log.Warn().Err(err).Msg("JWT validation failed")
+			http.Error(w, "invalid token", http.StatusUnauthorized)
+			return
 		}
+
+		userID = claims.Subject
+	}
+
+	// Verify session belongs to this user
+	session, err := s.sessionMgr.GetSession(sessionID)
+	if err != nil {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+
+	if session.UserID != userID {
+		http.Error(w, "session user mismatch", http.StatusForbidden)
+		return
 	}
 
 	s.sessionMgr.DeleteSession(sessionID)
