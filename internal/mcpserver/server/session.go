@@ -112,13 +112,13 @@ func (sm *SessionManager) AddAttachment(sessionID string, att tools.Attachment) 
 	// Enforce attachment limit (prevent memory growth)
 	const maxAttachments = 50
 	if len(session.Attachments) >= maxAttachments {
-		return fmt.Errorf("attachment limit exceeded (max %d)", maxAttachments)
+		return tools.ErrAttachmentLimitExceeded
 	}
 
 	// Check for duplicates (by both UID and kind, as different entity types may share UUIDs)
 	for _, existing := range session.Attachments {
 		if existing.UID == att.UID && existing.Kind == att.Kind {
-			return fmt.Errorf("entity already attached")
+			return tools.ErrAttachmentAlreadyExists
 		}
 	}
 
@@ -155,7 +155,7 @@ func (sm *SessionManager) RemoveAttachment(sessionID, entityUID, entityKind stri
 	}
 
 	if !found {
-		return fmt.Errorf("attachment not found")
+		return tools.ErrAttachmentNotFound
 	}
 
 	session.Attachments = filtered

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 )
 
 // Context attachment handlers
@@ -32,6 +33,11 @@ func HandleAttachContext(ctx context.Context, tc *ToolContext, raw json.RawMessa
 	}
 
 	if err := tc.SessionManager.AddAttachment(tc.SessionID, attachment); err != nil {
+		// Map known client errors to ErrCodeInvalidParams
+		if errors.Is(err, ErrAttachmentAlreadyExists) || errors.Is(err, ErrAttachmentLimitExceeded) {
+			return nil, NewToolError(ErrCodeInvalidParams, err.Error(), nil)
+		}
+		// Unknown/internal errors
 		return nil, NewToolError(ErrCodeInternal, "Failed to attach context: "+err.Error(), nil)
 	}
 
@@ -68,6 +74,11 @@ func HandleDetachContext(ctx context.Context, tc *ToolContext, raw json.RawMessa
 
 	// Remove attachment from session (by both UID and kind to target specific attachment)
 	if err := tc.SessionManager.RemoveAttachment(tc.SessionID, uid.String(), params.EntityKind); err != nil {
+		// Map known client errors to ErrCodeInvalidParams
+		if errors.Is(err, ErrAttachmentNotFound) {
+			return nil, NewToolError(ErrCodeInvalidParams, err.Error(), nil)
+		}
+		// Unknown/internal errors
 		return nil, NewToolError(ErrCodeInternal, "Failed to detach context: "+err.Error(), nil)
 	}
 

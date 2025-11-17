@@ -1,8 +1,17 @@
 package tools
 
 import (
+	"errors"
+
 	"github.com/erauner12/toolbridge-api/internal/mcpserver/client"
 	"github.com/rs/zerolog"
+)
+
+// Attachment-related errors (client errors - invalid parameters)
+var (
+	ErrAttachmentLimitExceeded = errors.New("attachment limit exceeded")
+	ErrAttachmentAlreadyExists = errors.New("entity already attached")
+	ErrAttachmentNotFound      = errors.New("attachment not found")
 )
 
 // SessionManager interface for attachment management (to avoid circular imports)
