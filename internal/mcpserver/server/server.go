@@ -177,7 +177,8 @@ func (s *MCPServer) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 		tokenString = strings.TrimPrefix(authHeader, "Bearer ")
 		claims, usedIntrospection, err := s.jwtValidator.ValidateToken(r.Context(), tokenString)
 		if err != nil {
-			log.Warn().Err(err).Bool("introspectionFallback", usedIntrospection).Msg("Access token validation failed")
+			// Note: Detailed validation logs (JWT vs introspection attempts) are emitted by JWTValidator
+			log.Warn().Err(err).Msg("Access token validation failed")
 			s.sendError(w, nil, InvalidRequest, "invalid token")
 			return
 		}
@@ -388,7 +389,8 @@ func (s *MCPServer) handleMCPGet(w http.ResponseWriter, r *http.Request) {
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		claims, usedIntrospection, err := s.jwtValidator.ValidateToken(r.Context(), tokenString)
 		if err != nil {
-			log.Warn().Err(err).Bool("introspectionFallback", usedIntrospection).Msg("Access token validation failed")
+			// Note: Detailed validation logs (JWT vs introspection attempts) are emitted by JWTValidator
+			log.Warn().Err(err).Msg("Access token validation failed")
 			http.Error(w, "invalid token", http.StatusUnauthorized)
 			return
 		}
