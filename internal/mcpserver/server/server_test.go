@@ -141,42 +141,41 @@ func TestMCPServer_OAuthMetadata(t *testing.T) {
 
 func TestMCPServer_OAuthProtectedResourceMetadata(t *testing.T) {
 	tests := []struct {
-		name              string
-		publicURL         string
-		requestHost       string
-		xForwardedProto   string
-		expectScheme      string
-		expectHost        string
+		name             string
+		syncAPIAudience  string // Empty means dev mode (no Auth0 config)
+		publicURL        string
+		requestHost      string
+		xForwardedProto  string
+		expectedResource string
 	}{
 		{
-			name:         "With PublicURL configured",
-			publicURL:    "https://mcpbridge.example.com",
-			requestHost:  "localhost:8082",
-			expectScheme: "https",
-			expectHost:   "mcpbridge.example.com",
+			name:             "Production mode - Uses Sync API audience",
+			syncAPIAudience:  "https://api.test.com",
+			publicURL:        "https://mcpbridge.example.com",
+			requestHost:      "localhost:8082",
+			expectedResource: "https://api.test.com", // Should use audience, NOT public URL
 		},
 		{
-			name:         "Without PublicURL (fallback to request - plain HTTP)",
-			publicURL:    "",
-			requestHost:  "localhost:8082",
-			expectScheme: "http",
-			expectHost:   "localhost:8082",
+			name:             "Dev mode - Falls back to public URL",
+			syncAPIAudience:  "", // Empty = dev mode
+			publicURL:        "https://mcpbridge.example.com",
+			requestHost:      "localhost:8082",
+			expectedResource: "https://mcpbridge.example.com",
 		},
 		{
-			name:            "Behind TLS proxy (X-Forwarded-Proto: https)",
-			publicURL:       "",
-			requestHost:     "mcpbridge.erauner.dev",
-			xForwardedProto: "https",
-			expectScheme:    "https",
-			expectHost:      "mcpbridge.erauner.dev",
+			name:             "Dev mode - Falls back to request host (plain HTTP)",
+			syncAPIAudience:  "", // Empty = dev mode
+			publicURL:        "",
+			requestHost:      "localhost:8082",
+			expectedResource: "http://localhost:8082",
 		},
 		{
-			name:            "Behind non-TLS proxy (X-Forwarded-Proto: http)",
-			publicURL:       "",
-			requestHost:     "localhost:8082",
-			xForwardedProto: "http",
-			expectScheme:    "http",
-			expectHost:      "localhost:8082",
+			name:             "Dev mode - Falls back to request with X-Forwarded-Proto",
+			syncAPIAudience:  "", // Empty = dev mode
+			publicURL:        "",
+			requestHost:      "mcpbridge.erauner.dev",
+			xForwardedProto:  "https",
+			expectedResource: "https://mcpbridge.erauner.dev",
 		},
 	}
 
@@ -186,12 +185,16 @@ func TestMCPServer_OAuthProtectedResourceMetadata(t *testing.T) {
 			cfg := &config.Config{
 				Auth0: config.Auth0Config{
 					Domain: "test.auth0.com",
-					SyncAPI: &config.SyncAPIConfig{
-						Audience: "https://api.test.com",
-					},
 				},
 				APIBaseURL: "http://localhost:8081",
 				PublicURL:  tt.publicURL,
+			}
+
+			// Only set SyncAPI if audience is configured (production mode)
+			if tt.syncAPIAudience != "" {
+				cfg.Auth0.SyncAPI = &config.SyncAPIConfig{
+					Audience: tt.syncAPIAudience,
+				}
 			}
 
 			server := NewMCPServer(cfg)
@@ -223,14 +226,15 @@ func TestMCPServer_OAuthProtectedResourceMetadata(t *testing.T) {
 				}
 			}
 
-			// Verify resource URL contains expected scheme and host
+			// Verify resource field matches expected value
+			// In production: should be Sync API audience
+			// In dev mode: should fall back to MCP bridge URL
 			resource, ok := metadata["resource"].(string)
 			if !ok {
 				t.Fatalf("resource field is not a string")
 			}
-			expectedResource := tt.expectScheme + "://" + tt.expectHost
-			if resource != expectedResource {
-				t.Errorf("Expected resource %q, got %q", expectedResource, resource)
+			if resource != tt.expectedResource {
+				t.Errorf("Expected resource %q, got %q", tt.expectedResource, resource)
 			}
 
 			// Verify authorization_servers contains Auth0 issuer
