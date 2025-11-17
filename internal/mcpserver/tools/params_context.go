@@ -27,12 +27,17 @@ func (p *AttachContextParams) ParseUID() (uuid.UUID, error) {
 }
 
 type DetachContextParams struct {
-	EntityUID string `json:"entityUid"`
+	EntityUID  string `json:"entityUid"`
+	EntityKind string `json:"entityKind"`
 }
 
 func (p *DetachContextParams) Validate() error {
 	if _, err := uuid.Parse(p.EntityUID); err != nil {
 		return fmt.Errorf("invalid entityUid: %w", err)
+	}
+	allowedKinds := map[string]bool{"note": true, "task": true, "chat": true}
+	if !allowedKinds[p.EntityKind] {
+		return fmt.Errorf("invalid entityKind: must be note, task, or chat")
 	}
 	return nil
 }

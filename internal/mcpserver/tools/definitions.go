@@ -307,8 +307,9 @@ func registerContextTools(r *Registry) {
 		Name:        "context.detach",
 		Description: "Remove an entity from the MCP session context",
 		InputSchema: BuildSchema(map[string]any{
-			"entityUid": UUIDSchema("UID of the entity to detach"),
-		}, []string{"entityUid"}),
+			"entityUid":  UUIDSchema("UID of the entity to detach"),
+			"entityKind": EnumSchema("Type of entity", []string{"note", "task", "chat"}),
+		}, []string{"entityUid", "entityKind"}),
 	}, HandleDetachContext)
 
 	// context.list

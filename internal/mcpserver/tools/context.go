@@ -8,7 +8,7 @@ import (
 // SessionManager interface for attachment management (to avoid circular imports)
 type SessionManager interface {
 	AddAttachment(sessionID string, att Attachment) error
-	RemoveAttachment(sessionID, entityUID string) error
+	RemoveAttachment(sessionID, entityUID, entityKind string) error
 	ListAttachments(sessionID string) ([]Attachment, error)
 	ClearAttachments(sessionID string) error
 }

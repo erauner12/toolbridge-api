@@ -66,13 +66,14 @@ func HandleDetachContext(ctx context.Context, tc *ToolContext, raw json.RawMessa
 		return nil, NewToolError(ErrCodeInvalidParams, "Invalid UID: "+err.Error(), nil)
 	}
 
-	// Remove attachment from session
-	if err := tc.SessionManager.RemoveAttachment(tc.SessionID, uid.String()); err != nil {
+	// Remove attachment from session (by both UID and kind to target specific attachment)
+	if err := tc.SessionManager.RemoveAttachment(tc.SessionID, uid.String(), params.EntityKind); err != nil {
 		return nil, NewToolError(ErrCodeInternal, "Failed to detach context: "+err.Error(), nil)
 	}
 
 	tc.Logger.Info().
 		Str("entityUID", uid.String()).
+		Str("entityKind", params.EntityKind).
 		Str("sessionID", tc.SessionID).
 		Msg("Context detached from MCP session")
 

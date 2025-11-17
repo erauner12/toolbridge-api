@@ -133,8 +133,8 @@ func (sm *SessionManager) AddAttachment(sessionID string, att tools.Attachment) 
 	return nil
 }
 
-// RemoveAttachment removes a context attachment from a session
-func (sm *SessionManager) RemoveAttachment(sessionID, entityUID string) error {
+// RemoveAttachment removes a context attachment from a session by UID and kind
+func (sm *SessionManager) RemoveAttachment(sessionID, entityUID, entityKind string) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -143,11 +143,11 @@ func (sm *SessionManager) RemoveAttachment(sessionID, entityUID string) error {
 		return fmt.Errorf("session not found")
 	}
 
-	// Find and remove the attachment
+	// Find and remove the attachment (filter by both UID and kind for precision)
 	found := false
 	filtered := make([]tools.Attachment, 0, len(session.Attachments))
 	for _, att := range session.Attachments {
-		if att.UID != entityUID {
+		if att.UID != entityUID || att.Kind != entityKind {
 			filtered = append(filtered, att)
 		} else {
 			found = true
@@ -163,6 +163,7 @@ func (sm *SessionManager) RemoveAttachment(sessionID, entityUID string) error {
 	log.Debug().
 		Str("sessionId", sessionID).
 		Str("entityUID", entityUID).
+		Str("entityKind", entityKind).
 		Msg("Removed context attachment from MCP session")
 
 	return nil
