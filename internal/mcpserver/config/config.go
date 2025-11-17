@@ -6,6 +6,7 @@ import "time"
 type Config struct {
 	Auth0          Auth0Config     `json:"auth0"`
 	APIBaseURL     string          `json:"apiBaseUrl"`
+	PublicURL      string          `json:"publicUrl,omitempty"` // Public-facing MCP endpoint URL for OAuth metadata
 	Workspace      WorkspaceConfig `json:"workspace"`
 	Allowlist      []string        `json:"allowlist"`       // deprecated, unused
 	AllowedOrigins []string        `json:"allowedOrigins"`  // CORS origin validation (DNS rebinding protection)

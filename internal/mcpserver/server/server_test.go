@@ -139,6 +139,131 @@ func TestMCPServer_OAuthMetadata(t *testing.T) {
 	}
 }
 
+func TestMCPServer_OAuthProtectedResourceMetadata(t *testing.T) {
+	tests := []struct {
+		name              string
+		publicURL         string
+		requestHost       string
+		xForwardedProto   string
+		expectScheme      string
+		expectHost        string
+	}{
+		{
+			name:         "With PublicURL configured",
+			publicURL:    "https://mcpbridge.example.com",
+			requestHost:  "localhost:8082",
+			expectScheme: "https",
+			expectHost:   "mcpbridge.example.com",
+		},
+		{
+			name:         "Without PublicURL (fallback to request - plain HTTP)",
+			publicURL:    "",
+			requestHost:  "localhost:8082",
+			expectScheme: "http",
+			expectHost:   "localhost:8082",
+		},
+		{
+			name:            "Behind TLS proxy (X-Forwarded-Proto: https)",
+			publicURL:       "",
+			requestHost:     "mcpbridge.erauner.dev",
+			xForwardedProto: "https",
+			expectScheme:    "https",
+			expectHost:      "mcpbridge.erauner.dev",
+		},
+		{
+			name:            "Behind non-TLS proxy (X-Forwarded-Proto: http)",
+			publicURL:       "",
+			requestHost:     "localhost:8082",
+			xForwardedProto: "http",
+			expectScheme:    "http",
+			expectHost:      "localhost:8082",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create test config
+			cfg := &config.Config{
+				Auth0: config.Auth0Config{
+					Domain: "test.auth0.com",
+					SyncAPI: &config.SyncAPIConfig{
+						Audience: "https://api.test.com",
+					},
+				},
+				APIBaseURL: "http://localhost:8081",
+				PublicURL:  tt.publicURL,
+			}
+
+			server := NewMCPServer(cfg)
+
+			// Create test request
+			req := httptest.NewRequest("GET", "/.well-known/oauth-protected-resource", nil)
+			req.Host = tt.requestHost
+			if tt.xForwardedProto != "" {
+				req.Header.Set("X-Forwarded-Proto", tt.xForwardedProto)
+			}
+			w := httptest.NewRecorder()
+
+			server.handleOAuthProtectedResourceMetadata(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Errorf("Expected status 200, got %d", w.Code)
+			}
+
+			var metadata map[string]interface{}
+			if err := json.NewDecoder(w.Body).Decode(&metadata); err != nil {
+				t.Fatalf("Failed to decode response: %v", err)
+			}
+
+			// Verify required fields per RFC 9728
+			requiredFields := []string{"resource", "authorization_servers", "bearer_methods_supported"}
+			for _, field := range requiredFields {
+				if _, ok := metadata[field]; !ok {
+					t.Errorf("Missing required field: %s", field)
+				}
+			}
+
+			// Verify resource URL contains expected scheme and host
+			resource, ok := metadata["resource"].(string)
+			if !ok {
+				t.Fatalf("resource field is not a string")
+			}
+			expectedResource := tt.expectScheme + "://" + tt.expectHost
+			if resource != expectedResource {
+				t.Errorf("Expected resource %q, got %q", expectedResource, resource)
+			}
+
+			// Verify authorization_servers contains Auth0 issuer
+			authServers, ok := metadata["authorization_servers"].([]interface{})
+			if !ok {
+				t.Fatalf("authorization_servers is not an array")
+			}
+			if len(authServers) != 1 {
+				t.Errorf("Expected 1 authorization server, got %d", len(authServers))
+			}
+			if authServers[0] != "https://test.auth0.com/" {
+				t.Errorf("Expected Auth0 issuer, got %v", authServers[0])
+			}
+
+			// Verify bearer_methods_supported includes "header"
+			bearerMethods, ok := metadata["bearer_methods_supported"].([]interface{})
+			if !ok {
+				t.Fatalf("bearer_methods_supported is not an array")
+			}
+			found := false
+			for _, method := range bearerMethods {
+				if method == "header" {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Error("bearer_methods_supported should include 'header'")
+			}
+		})
+	}
+}
+
 func TestMCPServer_Initialize(t *testing.T) {
 	// Generate test RSA key
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
