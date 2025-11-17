@@ -16,16 +16,17 @@ import (
 
 // JWTValidator validates Auth0 JWT tokens
 type JWTValidator struct {
-	mu         sync.RWMutex
-	jwksURL    string
-	audience   string
-	issuer     string
-	publicKeys map[string]*rsa.PublicKey
-	lastFetch  time.Time
-	httpClient *http.Client
-	ready      bool // true once JWKS has been fetched at least once
-	stopRetry  chan struct{}
-	retryDone  chan struct{}
+	mu           sync.RWMutex
+	jwksURL      string
+	audience     string
+	issuer       string
+	publicKeys   map[string]*rsa.PublicKey
+	lastFetch    time.Time
+	httpClient   *http.Client
+	ready        bool // true once JWKS has been fetched at least once
+	stopRetry    chan struct{}
+	retryDone    chan struct{}
+	retryRunning bool // true if background retry goroutine is running
 }
 
 // NewJWTValidator creates a new JWT validator
@@ -211,8 +212,20 @@ func (v *JWTValidator) Ready() bool {
 // until successful. This ensures readiness eventually becomes true even if
 // Auth0 is temporarily unreachable during startup.
 func (v *JWTValidator) StartBackgroundRetry() {
+	v.mu.Lock()
+	v.retryRunning = true
+	v.mu.Unlock()
+
+	log.Info().Msg("Starting background JWKS retry (will retry every 5-60s until successful)")
+
 	go func() {
-		defer close(v.retryDone)
+		defer func() {
+			v.mu.Lock()
+			v.retryRunning = false
+			v.mu.Unlock()
+			close(v.retryDone)
+			log.Info().Msg("Background JWKS retry stopped")
+		}()
 
 		retryInterval := 5 * time.Second
 		maxRetryInterval := 60 * time.Second
@@ -243,7 +256,7 @@ func (v *JWTValidator) StartBackgroundRetry() {
 					retryInterval = maxRetryInterval
 				}
 			case <-v.stopRetry:
-				log.Debug().Msg("Background retry stopped")
+				log.Info().Msg("Background retry received stop signal")
 				return
 			}
 		}
@@ -251,7 +264,17 @@ func (v *JWTValidator) StartBackgroundRetry() {
 }
 
 // StopBackgroundRetry stops the background retry goroutine
+// Only waits if the retry goroutine is actually running to avoid deadlock
 func (v *JWTValidator) StopBackgroundRetry() {
+	v.mu.RLock()
+	isRunning := v.retryRunning
+	v.mu.RUnlock()
+
+	if !isRunning {
+		// Retry was never started (warmup succeeded on first try)
+		return
+	}
+
 	close(v.stopRetry)
 	<-v.retryDone // Wait for goroutine to finish
 }

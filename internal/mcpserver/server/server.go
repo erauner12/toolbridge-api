@@ -96,7 +96,7 @@ func (s *MCPServer) Start(addr string) error {
 
 // Shutdown gracefully shuts down the server
 func (s *MCPServer) Shutdown(ctx context.Context) error {
-	// Stop background retry if running
+	// Stop background retry goroutine (safe to call even if not running)
 	if s.jwtValidator != nil {
 		s.jwtValidator.StopBackgroundRetry()
 	}
