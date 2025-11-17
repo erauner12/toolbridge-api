@@ -5,16 +5,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/erauner12/toolbridge-api/internal/mcpserver/tools"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
 // MCPSession represents an active MCP client connection
 type MCPSession struct {
-	ID        string
-	UserID    string // From JWT sub claim
-	CreatedAt time.Time
-	LastSeen  time.Time
+	ID          string
+	UserID      string // From JWT sub claim
+	CreatedAt   time.Time
+	LastSeen    time.Time
+	Attachments []tools.Attachment // In-memory context attachments
 	// SSE connection tracking would go here in future
 }
 
@@ -44,10 +46,11 @@ func (sm *SessionManager) CreateSession(userID string) *MCPSession {
 	defer sm.mu.Unlock()
 
 	session := &MCPSession{
-		ID:        uuid.New().String(),
-		UserID:    userID,
-		CreatedAt: time.Now(),
-		LastSeen:  time.Now(),
+		ID:          uuid.New().String(),
+		UserID:      userID,
+		CreatedAt:   time.Now(),
+		LastSeen:    time.Now(),
+		Attachments: make([]tools.Attachment, 0),
 	}
 
 	sm.sessions[session.ID] = session
@@ -93,6 +96,112 @@ func (sm *SessionManager) DeleteSession(sessionID string) {
 	log.Debug().
 		Str("sessionId", sessionID).
 		Msg("Deleted MCP session")
+}
+
+// AddAttachment adds a context attachment to a session
+// Returns error if session not found or attachment limit exceeded
+func (sm *SessionManager) AddAttachment(sessionID string, att tools.Attachment) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	session, exists := sm.sessions[sessionID]
+	if !exists {
+		return fmt.Errorf("session not found")
+	}
+
+	// Enforce attachment limit (prevent memory growth)
+	const maxAttachments = 50
+	if len(session.Attachments) >= maxAttachments {
+		return fmt.Errorf("attachment limit exceeded (max %d)", maxAttachments)
+	}
+
+	// Check for duplicates
+	for _, existing := range session.Attachments {
+		if existing.UID == att.UID {
+			return fmt.Errorf("entity already attached")
+		}
+	}
+
+	session.Attachments = append(session.Attachments, att)
+
+	log.Debug().
+		Str("sessionId", sessionID).
+		Str("entityUID", att.UID).
+		Str("entityKind", att.Kind).
+		Msg("Added context attachment to MCP session")
+
+	return nil
+}
+
+// RemoveAttachment removes a context attachment from a session
+func (sm *SessionManager) RemoveAttachment(sessionID, entityUID string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	session, exists := sm.sessions[sessionID]
+	if !exists {
+		return fmt.Errorf("session not found")
+	}
+
+	// Find and remove the attachment
+	found := false
+	filtered := make([]tools.Attachment, 0, len(session.Attachments))
+	for _, att := range session.Attachments {
+		if att.UID != entityUID {
+			filtered = append(filtered, att)
+		} else {
+			found = true
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("attachment not found")
+	}
+
+	session.Attachments = filtered
+
+	log.Debug().
+		Str("sessionId", sessionID).
+		Str("entityUID", entityUID).
+		Msg("Removed context attachment from MCP session")
+
+	return nil
+}
+
+// ListAttachments returns all attachments for a session
+func (sm *SessionManager) ListAttachments(sessionID string) ([]tools.Attachment, error) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	session, exists := sm.sessions[sessionID]
+	if !exists {
+		return nil, fmt.Errorf("session not found")
+	}
+
+	// Return a copy to prevent external modification
+	attachments := make([]tools.Attachment, len(session.Attachments))
+	copy(attachments, session.Attachments)
+
+	return attachments, nil
+}
+
+// ClearAttachments removes all attachments from a session
+func (sm *SessionManager) ClearAttachments(sessionID string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	session, exists := sm.sessions[sessionID]
+	if !exists {
+		return fmt.Errorf("session not found")
+	}
+
+	session.Attachments = make([]tools.Attachment, 0)
+
+	log.Debug().
+		Str("sessionId", sessionID).
+		Msg("Cleared all context attachments from MCP session")
+
+	return nil
 }
 
 // cleanupExpired removes expired sessions
