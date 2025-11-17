@@ -31,6 +31,9 @@ help:
 	@echo "  make run-mcp          - Run MCP bridge in dev mode"
 	@echo "  make test-mcp         - Test MCP bridge components"
 	@echo "  make test-mcp-smoke   - Run MCP bridge smoke tests"
+	@echo "  make test-mcp-docker  - Run full MCP bridge Docker integration tests"
+	@echo "  make test-mcp-docker-up - Start MCP bridge Docker test environment"
+	@echo "  make test-mcp-docker-down - Stop MCP bridge Docker test environment"
 	@echo ""
 	@echo "Testing:"
 	@echo "  make test             - Run all tests (unit + integration)"
@@ -233,6 +236,36 @@ test-mcp:
 test-mcp-smoke:
 	@echo "Running MCP bridge smoke tests..."
 	@./scripts/test-mcp-dev-mode.sh
+
+# Run MCP bridge Docker integration tests (full stack)
+test-mcp-docker:
+	@echo "Running MCP bridge Docker integration tests..."
+	@./scripts/test-mcp-bridge-docker.sh
+
+# Start MCP bridge Docker test environment (manual control)
+test-mcp-docker-up:
+	@echo "Starting MCP bridge test environment..."
+	docker-compose -f docker-compose.mcp-test.yml up -d
+	@echo ""
+	@echo "Test environment started!"
+	@echo ""
+	@echo "Services:"
+	@echo "  - PostgreSQL:       localhost:5432"
+	@echo "  - REST API:         http://localhost:8081"
+	@echo "  - MCP Bridge (dev): http://localhost:8082"
+	@echo ""
+	@echo "Useful commands:"
+	@echo "  docker-compose -f docker-compose.mcp-test.yml logs -f mcpbridge-dev"
+	@echo "  curl http://localhost:8082/healthz"
+	@echo "  curl http://localhost:8082/readyz"
+	@echo ""
+	@echo "To stop: make test-mcp-docker-down"
+
+# Stop MCP bridge Docker test environment
+test-mcp-docker-down:
+	@echo "Stopping MCP bridge test environment..."
+	docker-compose -f docker-compose.mcp-test.yml down -v --remove-orphans
+	@echo "✓ Test environment stopped and cleaned up"
 
 # Build Docker image for local platform (fast, for development)
 docker-build-local:
