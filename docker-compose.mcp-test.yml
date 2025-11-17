@@ -1,0 +1,128 @@
+# Docker Compose for Local MCP Bridge Testing
+# This file sets up a complete testing environment for the MCP bridge
+# before deploying to Kubernetes.
+#
+# Usage:
+#   make test-mcp-docker        # Run full test suite
+#   make test-mcp-docker-up     # Start services manually
+#   make test-mcp-docker-down   # Stop services
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: toolbridge-postgres-test
+    environment:
+      POSTGRES_USER: toolbridge
+      POSTGRES_PASSWORD: dev-password
+      POSTGRES_DB: toolbridge
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U toolbridge"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - mcp-test
+
+  # Database Migration Job
+  migrate:
+    image: ghcr.io/erauner12/toolbridge-api:latest
+    container_name: toolbridge-migrate-test
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://toolbridge:dev-password@postgres:5432/toolbridge?sslmode=disable
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: toolbridge
+      DB_USER: toolbridge
+      POSTGRES_PASSWORD: dev-password
+    command: ["/bin/sh", "/app/scripts/migrate.sh"]
+    networks:
+      - mcp-test
+
+  # ToolBridge REST API
+  toolbridge-api:
+    image: ghcr.io/erauner12/toolbridge-api:latest
+    container_name: toolbridge-api-test
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://toolbridge:dev-password@postgres:5432/toolbridge?sslmode=disable
+      JWT_HS256_SECRET: dev-secret
+      ENV: dev
+      HTTP_ADDR: ":8081"
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8081/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - mcp-test
+
+  # MCP Bridge (Dev Mode - No Auth0)
+  mcpbridge-dev:
+    image: toolbridge-mcpbridge:latest
+    container_name: toolbridge-mcpbridge-dev-test
+    depends_on:
+      toolbridge-api:
+        condition: service_healthy
+    environment:
+      MCP_DEV_MODE: "true"
+      MCP_DEBUG: "true"
+      MCP_LOG_LEVEL: debug
+      MCP_API_BASE_URL: http://toolbridge-api:8081
+    ports:
+      - "8082:8082"
+    command: ["--dev", "--debug"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - mcp-test
+
+  # MCP Bridge (Simulated Production - Tests Background Retry)
+  # This one intentionally has invalid Auth0 config to test retry logic
+  mcpbridge-prod-retry:
+    image: toolbridge-mcpbridge:latest
+    container_name: toolbridge-mcpbridge-prod-retry-test
+    depends_on:
+      toolbridge-api:
+        condition: service_healthy
+    environment:
+      MCP_DEV_MODE: "false"
+      MCP_DEBUG: "true"
+      MCP_LOG_LEVEL: debug
+      MCP_API_BASE_URL: http://toolbridge-api:8081
+      AUTH0_DOMAIN: "invalid-test.auth0.com"
+      AUTH0_SYNC_API_AUDIENCE: "https://api.test.toolbridge.com"
+    ports:
+      - "8083:8082"
+    command: ["--debug"]
+    healthcheck:
+      # Health should pass even if JWT validator isn't ready
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8082/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - mcp-test
+    profiles:
+      - retry-test  # Optional service, only start with --profile retry-test
+
+networks:
+  mcp-test:
+    driver: bridge

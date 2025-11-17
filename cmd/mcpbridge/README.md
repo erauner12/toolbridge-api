@@ -203,6 +203,47 @@ make test-mcp-smoke
 
 This is the **recommended first step** after building to verify your setup.
 
+### Docker Integration Tests (Pre-Deployment Validation)
+
+**Before deploying to Kubernetes**, test the Docker image in a production-like environment:
+
+```bash
+# Run full automated test suite (recommended)
+make test-mcp-docker
+```
+
+This comprehensive test:
+- ✅ Builds the MCP bridge Docker image
+- ✅ Starts the full stack (PostgreSQL, REST API, MCP bridge)
+- ✅ Runs integration tests against running services
+- ✅ Validates health/readiness endpoints
+- ✅ Tests MCP initialize flow
+- ✅ Verifies graceful shutdown
+- ✅ Cleans up automatically
+
+**For interactive testing:**
+```bash
+# Start test environment
+make test-mcp-docker-up
+
+# Services available at:
+#   PostgreSQL:   localhost:5432
+#   REST API:     http://localhost:8081
+#   MCP Bridge:   http://localhost:8082
+
+# Test manually
+curl http://localhost:8082/healthz
+curl http://localhost:8082/readyz
+
+# View logs
+docker-compose -f docker-compose.mcp-test.yml logs -f mcpbridge-dev
+
+# Stop environment
+make test-mcp-docker-down
+```
+
+**See [Local Testing Guide](../../docs/mcp-bridge-local-testing.md) for detailed documentation, troubleshooting, and advanced scenarios.**
+
 ### Unit Tests
 
 ```bash
