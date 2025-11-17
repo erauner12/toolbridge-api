@@ -470,6 +470,7 @@ func TestMCPServer_DeleteSession(t *testing.T) {
 			},
 		},
 		APIBaseURL: "http://localhost:8081",
+		DevMode:    true, // Enable dev mode for easier testing
 	}
 
 	mcpServer := NewMCPServer(cfg)
@@ -477,9 +478,10 @@ func TestMCPServer_DeleteSession(t *testing.T) {
 	// Create a session directly
 	session := mcpServer.sessionMgr.CreateSession("test-user")
 
-	// Delete the session
+	// Delete the session (with auth header for dev mode)
 	req := httptest.NewRequest("DELETE", "/mcp", nil)
 	req.Header.Set("Mcp-Session-Id", session.ID)
+	req.Header.Set("X-Debug-Sub", "test-user") // Dev mode auth
 
 	w := httptest.NewRecorder()
 	mcpServer.handleMCPDelete(w, req)
