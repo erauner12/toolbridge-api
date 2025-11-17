@@ -57,8 +57,19 @@ func (s *MCPServer) handleOAuthProtectedResourceMetadata(w http.ResponseWriter, 
 		resourceURL = fmt.Sprintf("%s://%s", scheme, r.Host)
 	}
 
+	// RFC 9728: The "resource" field MUST be the API audience that tokens will be issued for.
+	// This tells Claude Desktop what audience to request when getting access tokens.
+	// It should match the Auth0 API audience, NOT the MCP bridge's public URL.
+	resource := ""
+	if s.config.Auth0.SyncAPI != nil && s.config.Auth0.SyncAPI.Audience != "" {
+		resource = s.config.Auth0.SyncAPI.Audience
+	} else {
+		// Fallback for dev mode or misconfiguration (should not happen in production)
+		resource = resourceURL
+	}
+
 	metadata := map[string]interface{}{
-		"resource":               resourceURL,
+		"resource":               resource,
 		"authorization_servers":  []string{issuer},
 		"bearer_methods_supported": []string{"header"},
 		"resource_documentation": fmt.Sprintf("%s/mcp", resourceURL),
