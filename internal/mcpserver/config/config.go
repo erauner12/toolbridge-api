@@ -10,9 +10,10 @@ type Config struct {
 	Workspace      WorkspaceConfig `json:"workspace"`
 	Allowlist      []string        `json:"allowlist"`       // deprecated, unused
 	AllowedOrigins []string        `json:"allowedOrigins"`  // CORS origin validation (DNS rebinding protection)
-	Debug          bool            `json:"debug"`
-	DevMode        bool            `json:"devMode"` // enables X-Debug-Sub header fallback
-	LogLevel       string          `json:"logLevel"`
+	Debug             bool            `json:"debug"`
+	DevMode           bool            `json:"devMode"`           // enables X-Debug-Sub header fallback
+	TrustToolhiveAuth bool            `json:"trustToolhiveAuth"` // trust ToolHive proxy authentication
+	LogLevel          string          `json:"logLevel"`
 }
 
 // Auth0Config mirrors the Dart Auth0Config structure
@@ -44,7 +45,7 @@ type WorkspaceConfig struct {
 
 // Validate checks if the configuration is valid
 func (c *Config) Validate() error {
-	if !c.DevMode {
+	if !c.DevMode && !c.TrustToolhiveAuth {
 		if err := c.Auth0.Validate(); err != nil {
 			return err
 		}

@@ -92,6 +92,11 @@ func applyEnvironmentOverrides(cfg *Config) {
 		cfg.DevMode = true
 	}
 
+	// Trust ToolHive authentication
+	if trustToolhive := os.Getenv("TRUST_TOOLHIVE_AUTH"); trustToolhive == "true" || trustToolhive == "1" {
+		cfg.TrustToolhiveAuth = true
+	}
+
 	// Debug mode
 	if debug := os.Getenv("MCP_DEBUG"); debug == "true" || debug == "1" {
 		cfg.Debug = true

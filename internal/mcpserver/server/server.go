@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -27,8 +29,8 @@ type MCPServer struct {
 func NewMCPServer(cfg *config.Config) *MCPServer {
 	var jwtValidator *JWTValidator
 
-	// Only create JWT validator if not in dev mode and Auth0 is configured
-	if !cfg.DevMode && cfg.Auth0.SyncAPI != nil {
+	// Only create JWT validator if not in dev mode or trust-proxy mode, and Auth0 is configured
+	if !cfg.DevMode && !cfg.TrustToolhiveAuth && cfg.Auth0.SyncAPI != nil {
 		jwtValidator = NewJWTValidator(cfg.Auth0.Domain, cfg.Auth0.SyncAPI.Audience)
 	}
 
@@ -134,8 +136,34 @@ func (s *MCPServer) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 	var tokenString string
 	var expiresAt time.Time
 
-	// Check for dev mode
-	if s.config.DevMode {
+	// Check for trust-proxy mode (ToolHive gateway)
+	if s.config.TrustToolhiveAuth {
+		// Trust that ToolHive validated the JWT, parse claims without verification
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			s.sendError(w, nil, InvalidRequest, "missing authorization header from proxy")
+			return
+		}
+
+		tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+		claims, expTime, err := parseJWTClaimsWithoutValidation(tokenString)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to parse JWT in trust-proxy mode")
+			s.sendError(w, nil, InvalidRequest, "invalid jwt format")
+			return
+		}
+
+		// Extract user ID from 'sub' claim
+		if sub, ok := claims["sub"].(string); ok && sub != "" {
+			userID = sub
+			expiresAt = expTime
+			log.Debug().Str("userId", userID).Msg("Using trust-proxy authentication (ToolHive)")
+		} else {
+			s.sendError(w, nil, InvalidRequest, "missing sub claim in jwt")
+			return
+		}
+	} else if s.config.DevMode {
+		// Check for dev mode
 		// In dev mode, allow X-Debug-Sub header as fallback
 		debugSub := r.Header.Get("X-Debug-Sub")
 		if debugSub != "" {
@@ -146,7 +174,7 @@ func (s *MCPServer) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// If not using dev mode or no debug header, use JWT
+	// If not using trust-proxy or dev mode, use JWT validation
 	if userID == "" {
 		// JWT validation required but validator not configured
 		if s.jwtValidator == nil {
@@ -343,8 +371,33 @@ func (s *MCPServer) handleMCPGet(w http.ResponseWriter, r *http.Request) {
 
 	var userID string
 
-	// Check for dev mode
-	if s.config.DevMode {
+	// Check for trust-proxy mode (ToolHive gateway)
+	if s.config.TrustToolhiveAuth {
+		// Trust that ToolHive validated the JWT, parse claims without verification
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			http.Error(w, "missing authorization header from proxy", http.StatusUnauthorized)
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		claims, _, err := parseJWTClaimsWithoutValidation(tokenString)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to parse JWT in trust-proxy mode")
+			http.Error(w, "invalid jwt format", http.StatusUnauthorized)
+			return
+		}
+
+		// Extract user ID from 'sub' claim
+		if sub, ok := claims["sub"].(string); ok && sub != "" {
+			userID = sub
+			log.Debug().Str("userId", userID).Msg("Using trust-proxy authentication (ToolHive)")
+		} else {
+			http.Error(w, "missing sub claim in jwt", http.StatusUnauthorized)
+			return
+		}
+	} else if s.config.DevMode {
+		// Check for dev mode
 		// In dev mode, allow X-Debug-Sub header as fallback
 		debugSub := r.Header.Get("X-Debug-Sub")
 		if debugSub != "" {
@@ -353,7 +406,7 @@ func (s *MCPServer) handleMCPGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// If not using dev mode or no debug header, use JWT
+	// If not using trust-proxy or dev mode, use JWT validation
 	if userID == "" {
 		// JWT validation required but validator not configured
 		if s.jwtValidator == nil {
@@ -603,7 +656,7 @@ func (s *MCPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // handleReady handles GET /readyz (readiness probe)
 // Returns 200 OK if server is ready to accept traffic
-// Checks JWT validator readiness if not in dev mode
+// Checks JWT validator readiness if not in dev mode or trust-proxy mode
 func (s *MCPServer) handleReady(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -613,6 +666,16 @@ func (s *MCPServer) handleReady(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "ready",
 			"devMode": true,
+		})
+		return
+	}
+
+	// In trust-proxy mode, always ready (no JWT validator, trusts ToolHive)
+	if s.config.TrustToolhiveAuth {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":            "ready",
+			"trustToolhiveAuth": true,
 		})
 		return
 	}
@@ -633,4 +696,37 @@ func (s *MCPServer) handleReady(w http.ResponseWriter, r *http.Request) {
 		"status":       "ready",
 		"jwtValidator": "ready",
 	})
+}
+
+// parseJWTClaimsWithoutValidation parses JWT claims without cryptographic validation.
+// This is ONLY safe when used in trust-proxy mode where ToolHive has already validated the JWT.
+// Returns the claims map and expiration time, or an error if the JWT format is invalid.
+func parseJWTClaimsWithoutValidation(tokenString string) (map[string]interface{}, time.Time, error) {
+	// JWT format: header.payload.signature
+	parts := strings.Split(tokenString, ".")
+	if len(parts) != 3 {
+		return nil, time.Time{}, errors.New("invalid JWT format: expected 3 parts")
+	}
+
+	// Decode the payload (second part)
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("failed to decode JWT payload: %w", err)
+	}
+
+	// Parse claims
+	var claims map[string]interface{}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil, time.Time{}, fmt.Errorf("failed to parse JWT claims: %w", err)
+	}
+
+	// Extract expiration time
+	var expiresAt time.Time
+	if exp, ok := claims["exp"]; ok {
+		if expFloat, ok := exp.(float64); ok {
+			expiresAt = time.Unix(int64(expFloat), 0)
+		}
+	}
+
+	return claims, expiresAt, nil
 }
