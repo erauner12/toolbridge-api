@@ -24,6 +24,8 @@ type JWTValidator struct {
 	lastFetch  time.Time
 	httpClient *http.Client
 	ready      bool // true once JWKS has been fetched at least once
+	stopRetry  chan struct{}
+	retryDone  chan struct{}
 }
 
 // NewJWTValidator creates a new JWT validator
@@ -34,6 +36,8 @@ func NewJWTValidator(domain, audience string) *JWTValidator {
 		issuer:     fmt.Sprintf("https://%s/", domain),
 		publicKeys: make(map[string]*rsa.PublicKey),
 		httpClient: &http.Client{Timeout: 10 * time.Second},
+		stopRetry:  make(chan struct{}),
+		retryDone:  make(chan struct{}),
 	}
 }
 
@@ -201,6 +205,55 @@ func (v *JWTValidator) Ready() bool {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
 	return v.ready
+}
+
+// StartBackgroundRetry starts a background goroutine that retries JWKS fetches
+// until successful. This ensures readiness eventually becomes true even if
+// Auth0 is temporarily unreachable during startup.
+func (v *JWTValidator) StartBackgroundRetry() {
+	go func() {
+		defer close(v.retryDone)
+
+		retryInterval := 5 * time.Second
+		maxRetryInterval := 60 * time.Second
+
+		for {
+			// Check if already ready
+			if v.Ready() {
+				log.Info().Msg("JWT validator ready, stopping background retry")
+				return
+			}
+
+			// Try to fetch JWKS
+			log.Debug().Msg("Background retry: attempting to fetch JWKS")
+			err := v.WarmUp()
+			if err == nil {
+				log.Info().Msg("Background retry succeeded, JWT validator now ready")
+				return
+			}
+
+			log.Warn().Err(err).Dur("retryIn", retryInterval).Msg("Background retry failed, will retry")
+
+			// Wait before retry or stop
+			select {
+			case <-time.After(retryInterval):
+				// Exponential backoff (max 60s)
+				retryInterval *= 2
+				if retryInterval > maxRetryInterval {
+					retryInterval = maxRetryInterval
+				}
+			case <-v.stopRetry:
+				log.Debug().Msg("Background retry stopped")
+				return
+			}
+		}
+	}()
+}
+
+// StopBackgroundRetry stops the background retry goroutine
+func (v *JWTValidator) StopBackgroundRetry() {
+	close(v.stopRetry)
+	<-v.retryDone // Wait for goroutine to finish
 }
 
 // WarmUp pre-fetches JWKS to make the validator ready

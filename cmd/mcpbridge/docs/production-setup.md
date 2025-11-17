@@ -73,6 +73,33 @@ You'll need these values for Helm deployment:
 | `AUTH0_CLIENT_ID_NATIVE_MACOS` | `ghi789rst...` | macOS application Client ID (optional) |
 | `AUTH0_SYNC_API_AUDIENCE` | `https://api.toolbridge.yourdomain.com` | API Identifier |
 
+### 4. Required vs Optional Values
+
+**Production deployments (devMode=false) require:**
+
+| Helm Value | Required? | Description |
+|------------|-----------|-------------|
+| `mcpbridge.apiBaseUrl` | ✅ Required | ToolBridge REST API endpoint |
+| `mcpbridge.auth0.domain` | ✅ Required | Auth0 tenant domain |
+| `mcpbridge.auth0.syncApiAudience` or `secrets.auth0SyncApiAudience` | ✅ Required | Auth0 API audience |
+| `mcpbridge.allowedOrigins` | ⚠️ Recommended | Comma-separated allowed origins (empty allows all - insecure) |
+| `ingress.hostname` | ✅ Required | Public hostname for MCP bridge |
+| `secrets.auth0ClientIdNative` or `mcpbridge.auth0.clientIdNative` | ⚪ Optional | Native app client ID |
+| `secrets.auth0ClientIdWeb` or `mcpbridge.auth0.clientIdWeb` | ⚪ Optional | Web app client ID |
+| `secrets.auth0ClientIdMacos` or `mcpbridge.auth0.clientIdMacos` | ⚪ Optional | macOS app client ID |
+
+**Development deployments (devMode=true) require:**
+
+| Helm Value | Required? | Description |
+|------------|-----------|-------------|
+| `mcpbridge.apiBaseUrl` | ✅ Required | ToolBridge REST API endpoint |
+| `mcpbridge.devMode` | ✅ Must be `true` | Bypasses Auth0 validation |
+
+**Notes:**
+- If `devMode=false` and any required Auth0 values are missing, the pod will fail to start with `CreateContainerConfigError`.
+- Client IDs (native, web, macOS) are optional; provide only the ones you need for your deployment.
+- Use `secrets.existingSecret` to reference an externally managed secret (recommended for production).
+
 ## Helm Deployment
 
 ### 1. Build and Push Docker Image
@@ -327,10 +354,12 @@ kubectl describe pod -n toolbridge-mcp <pod-name>
    - Check Auth0 domain is correct
    - Verify network connectivity to Auth0
    - Check logs for JWKS fetch errors
+   - **Note**: If JWKS warmup fails at startup, background retry is automatically started. The pod should eventually become ready once Auth0 is reachable (retries every 5-60s with exponential backoff).
 
 2. Missing configuration
    - Verify ConfigMap and Secret are created
    - Check environment variables are set correctly
+   - See [Required vs Optional Values](#4-required-vs-optional-values) for mandatory fields
 
 **Solution**:
 ```bash
@@ -436,18 +465,25 @@ kubectl describe certificate -n toolbridge-mcp toolbridge-mcpbridge-tls
 
 Before going to production:
 
+**Required Configuration (see [Required vs Optional Values](#4-required-vs-optional-values)):**
+- [ ] All required Helm values are set (apiBaseUrl, auth0.domain, auth0.syncApiAudience, ingress.hostname)
 - [ ] Auth0 tenant configured with production domain
-- [ ] Client IDs created for all required platforms
-- [ ] Sync API audience configured
+- [ ] Sync API audience configured in Auth0
+- [ ] Client IDs created for required platforms (web/native/macOS as needed)
+- [ ] Allowed origins configured (not empty - recommended for production!)
+
+**Infrastructure:**
 - [ ] TLS certificate issued and valid
 - [ ] DNS pointing to ingress
-- [ ] Allowed origins configured (not empty!)
 - [ ] Resource limits set appropriately
-- [ ] Monitoring and alerting configured
-- [ ] Backup and disaster recovery plan in place
 - [ ] Secrets managed externally (not in values file)
+
+**Security & Operations:**
 - [ ] Network policies configured
 - [ ] Pod security policies applied
+- [ ] Monitoring and alerting configured
+- [ ] Backup and disaster recovery plan in place
+- [ ] Verified readiness probe recovers from transient JWKS failures (background retry enabled)
 
 ## Additional Resources
 

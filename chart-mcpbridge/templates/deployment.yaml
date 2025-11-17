@@ -57,36 +57,43 @@ spec:
 
         # Auth0 configuration from ConfigMap and Secret
         {{- if not .Values.mcpbridge.devMode }}
+        {{- if .Values.mcpbridge.auth0.domain }}
         - name: AUTH0_DOMAIN
           valueFrom:
             configMapKeyRef:
               name: {{ include "toolbridge-mcpbridge.fullname" . }}-config
               key: AUTH0_DOMAIN
+        {{- end }}
+        {{- if or .Values.secrets.auth0SyncApiAudience .Values.mcpbridge.auth0.syncApiAudience .Values.secrets.existingSecret }}
         - name: AUTH0_SYNC_API_AUDIENCE
           valueFrom:
             secretKeyRef:
               name: {{ include "toolbridge-mcpbridge.secretName" . }}
               key: auth0-sync-api-audience
-        {{- if .Values.secrets.auth0ClientIdNative }}
+        {{- end }}
+        {{- if or .Values.secrets.auth0ClientIdNative .Values.mcpbridge.auth0.clientIdNative .Values.secrets.existingSecret }}
         - name: AUTH0_CLIENT_ID_NATIVE
           valueFrom:
             secretKeyRef:
               name: {{ include "toolbridge-mcpbridge.secretName" . }}
               key: auth0-client-id-native
+              optional: true
         {{- end }}
-        {{- if .Values.secrets.auth0ClientIdWeb }}
+        {{- if or .Values.secrets.auth0ClientIdWeb .Values.mcpbridge.auth0.clientIdWeb .Values.secrets.existingSecret }}
         - name: AUTH0_CLIENT_ID_WEB
           valueFrom:
             secretKeyRef:
               name: {{ include "toolbridge-mcpbridge.secretName" . }}
               key: auth0-client-id-web
+              optional: true
         {{- end }}
-        {{- if .Values.secrets.auth0ClientIdMacos }}
+        {{- if or .Values.secrets.auth0ClientIdMacos .Values.mcpbridge.auth0.clientIdMacos .Values.secrets.existingSecret }}
         - name: AUTH0_CLIENT_ID_NATIVE_MACOS
           valueFrom:
             secretKeyRef:
               name: {{ include "toolbridge-mcpbridge.secretName" . }}
               key: auth0-client-id-macos
+              optional: true
         {{- end }}
         {{- end }}
 

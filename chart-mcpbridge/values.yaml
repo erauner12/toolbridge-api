@@ -19,9 +19,6 @@ mcpbridge:
   # API Base URL (ToolBridge REST API)
   apiBaseUrl: "http://toolbridge-api:80"
 
-  # HTTP server address (bind address)
-  httpAddr: ":8082"
-
   # Development mode (bypass Auth0, use X-Debug-Sub header)
   devMode: false
 

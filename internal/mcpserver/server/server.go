@@ -47,10 +47,20 @@ func NewMCPServer(cfg *config.Config) *MCPServer {
 }
 
 // WarmUp pre-fetches JWKS to make the server ready faster
-// This is optional but recommended during startup
+// This is optional but recommended during startup.
+// If the initial warmup fails, a background retry goroutine is started
+// to ensure the validator eventually becomes ready even if Auth0 is
+// temporarily unreachable during startup.
 func (s *MCPServer) WarmUp() error {
 	if s.jwtValidator != nil {
-		return s.jwtValidator.WarmUp()
+		err := s.jwtValidator.WarmUp()
+		if err != nil {
+			// Start background retry to recover from transient failures
+			log.Info().Msg("Starting background retry for JWT validator warmup")
+			s.jwtValidator.StartBackgroundRetry()
+			return err
+		}
+		return nil
 	}
 	// No warmup needed in dev mode
 	return nil
@@ -86,6 +96,11 @@ func (s *MCPServer) Start(addr string) error {
 
 // Shutdown gracefully shuts down the server
 func (s *MCPServer) Shutdown(ctx context.Context) error {
+	// Stop background retry if running
+	if s.jwtValidator != nil {
+		s.jwtValidator.StopBackgroundRetry()
+	}
+
 	if s.httpServer != nil {
 		return s.httpServer.Shutdown(ctx)
 	}
@@ -557,6 +572,7 @@ func (s *MCPServer) handleReady(w http.ResponseWriter, r *http.Request) {
 
 	// Check JWT validator readiness
 	if s.jwtValidator == nil || !s.jwtValidator.Ready() {
+		log.Debug().Msg("Readiness check failed: JWT validator not ready")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status": "not ready",
