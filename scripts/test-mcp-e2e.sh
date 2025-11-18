@@ -104,8 +104,8 @@ echo ""
 echo "Step 3: Running MCP integration tests..."
 cd ..
 
-# Run Python test script
-uv run --directory mcp python scripts/test-mcp-integration.py
+# Run Python test script (uses the mcp venv but runs from repo root)
+uv run --directory mcp python ../scripts/test-mcp-integration.py
 
 # Check exit code
 if [ $? -eq 0 ]; then
