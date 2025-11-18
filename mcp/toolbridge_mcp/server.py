@@ -45,13 +45,9 @@ async def health_check() -> dict:
 
 
 if __name__ == "__main__":
-    # For development: run with uvicorn
-    import uvicorn
-    
-    uvicorn.run(
-        "toolbridge_mcp.server:mcp",
+    # Run the MCP server with SSE transport for HTTP access
+    mcp.run(
+        transport="sse",  # Use SSE transport for HTTP/web access
         host=settings.host,
         port=settings.port,
-        reload=True,
-        log_level=settings.log_level.lower(),
     )
