@@ -1,0 +1,131 @@
+# Fly.io configuration for ToolBridge MCP-only staging deployment
+# This deploys ONLY the Python MCP proxy service to Fly.io
+# The Go API and PostgreSQL run in K8s (https://toolbridgeapi.erauner.dev)
+#
+# Setup:
+#   1. Create app: fly apps create toolbridge-mcp-staging
+#   2. Set secrets: fly secrets set ... (see docs/DEPLOYMENT-FLYIO.md)
+#   3. Deploy: fly deploy --config fly.staging.toml
+
+app = "toolbridge-mcp-staging"
+primary_region = "ord"  # Chicago - adjust based on K8s cluster location
+kill_signal = "SIGINT"
+kill_timeout = "5s"
+
+[build]
+  dockerfile = "Dockerfile.mcp-only"
+
+[env]
+  # Application environment
+  ENV = "staging"
+
+  # Python MCP configuration
+  # Note: TOOLBRIDGE_GO_API_BASE_URL must point to your K8s ingress
+  TOOLBRIDGE_HOST = "0.0.0.0"
+  TOOLBRIDGE_PORT = "8001"
+  TOOLBRIDGE_LOG_LEVEL = "INFO"
+
+# Secrets to set via `fly secrets set`:
+# - TOOLBRIDGE_GO_API_BASE_URL (e.g., https://toolbridgeapi.erauner.dev)
+# - TOOLBRIDGE_TENANT_ID (e.g., staging-tenant-001)
+# - TOOLBRIDGE_TENANT_HEADER_SECRET (must match K8s TENANT_HEADER_SECRET)
+
+# HTTP service (Python MCP)
+[[services]]
+  protocol = "tcp"
+  internal_port = 8001
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 50
+    soft_limit = 40
+
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "10s"
+
+  # Health checks disabled - FastMCP SSE endpoint requires authentication
+  # TODO: Add dedicated public health endpoint in future PR
+  # [[services.http_checks]]
+  #   interval = "30s"
+  #   timeout = "5s"
+  #   grace_period = "15s"
+  #   method = "GET"
+  #   path = "/sse"
+  #   protocol = "http"
+  #   tls_skip_verify = false
+
+[http_service]
+  internal_port = 8001
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 50
+    soft_limit = 40
+
+# VM configuration (small instance for MCP proxy)
+[vm]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+
+# ============================================================================
+# Secrets Configuration Reference
+# ============================================================================
+# Set these via `fly secrets set -a toolbridge-mcp-staging`:
+#
+# Required:
+#   TOOLBRIDGE_GO_API_BASE_URL    - External Go API URL (K8s ingress)
+#   TOOLBRIDGE_TENANT_ID          - Unique tenant identifier
+#   TOOLBRIDGE_TENANT_HEADER_SECRET - HMAC signing secret (matches K8s)
+#
+# Optional:
+#   TOOLBRIDGE_LOG_LEVEL          - DEBUG, INFO, WARNING, ERROR (default: INFO)
+#
+# Example:
+#   fly secrets set -a toolbridge-mcp-staging \
+#     TOOLBRIDGE_GO_API_BASE_URL="https://toolbridgeapi.erauner.dev" \
+#     TOOLBRIDGE_TENANT_ID="staging-tenant-001" \
+#     TOOLBRIDGE_TENANT_HEADER_SECRET="$(openssl rand -base64 32)"
+# ============================================================================
+
+# ============================================================================
+# Deployment Commands
+# ============================================================================
+# Initial setup:
+#   fly apps create toolbridge-mcp-staging
+#   fly secrets set ... (see above)
+#   fly deploy --config fly.staging.toml
+#
+# Update deployment:
+#   fly deploy --config fly.staging.toml
+#
+# View logs:
+#   fly logs -a toolbridge-mcp-staging
+#
+# Check status:
+#   fly status -a toolbridge-mcp-staging
+#
+# Scale:
+#   fly scale count 2 -a toolbridge-mcp-staging
+#   fly scale vm shared-cpu-2x --memory 1024 -a toolbridge-mcp-staging
+# ============================================================================

@@ -17,10 +17,17 @@ logger.add(
     colorize=True,
 )
 
-# Create MCP server instance
-mcp = FastMCP(
-    name="ToolBridge",
-)
+# Log authentication configuration
+# Currently using shared JWT token mode - MCP server accepts unauthenticated requests
+# and uses configured JWT token for backend API authentication.
+# TODO: Add OAuth/PKCE support for per-user authentication in future PR
+if settings.jwt_token:
+    logger.info("Using shared JWT token for backend API authentication")
+else:
+    logger.warning("No JWT token configured - backend API calls will fail")
+
+# Import MCP server instance (created in mcp_instance.py to avoid circular imports)
+from toolbridge_mcp.mcp_instance import mcp  # noqa: E402
 
 # Import tools to register them with the server
 # This triggers the @tool decorators which register tools with the mcp instance

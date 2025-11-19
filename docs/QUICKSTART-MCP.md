@@ -274,8 +274,9 @@ uv sync --reinstall
 
 1. **Add more tools:** Copy `tools/notes.py` pattern to add tasks, comments, chats
 2. **Write tests:** See `../internal/auth/tenant_headers_test.go` for examples
-3. **Deploy to Fly.io:** Follow `docs/SPEC-FASTMCP-INTEGRATION.md`
-4. **Production secrets:** Generate secure secrets with `openssl rand -base64 32`
+3. **Deploy to Fly.io:** Follow `docs/DEPLOYMENT-FLYIO.md` for MCP-only deployment
+4. **Full-stack deployment:** See `docs/SPEC-FASTMCP-INTEGRATION.md` for Go + Python
+5. **Production secrets:** Generate secure secrets with `openssl rand -base64 32` (see `docs/SECRETS-REFERENCE.md`)
 
 ## Development Tips
 
@@ -332,10 +333,13 @@ pytest
 
 ## Reference
 
-- **Specification:** `docs/SPEC-FASTMCP-INTEGRATION.md`
-- **MCP README:** `mcp/README.md`
+- **Local Setup Guide:** This document (quickstart)
+- **Fly.io Deployment:** `docs/DEPLOYMENT-FLYIO.md` (MCP-only to staging)
+- **Full-Stack Deployment:** `docs/SPEC-FASTMCP-INTEGRATION.md` (Go + Python)
+- **Secrets Management:** `docs/SECRETS-REFERENCE.md`
+- **MCP Service README:** `mcp/README.md`
 - **Go API README:** `README.md`
-- **Deployment:** `docs/DEPLOYMENT.md`
+- **K8s Deployment:** `../homelab-k8s/apps/toolbridge-api/README.md`
 
 ## Getting Help
 
