@@ -212,7 +212,8 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     # Try to load JWT_SECRET from .env, otherwise fetch from K8s
     if [ -f ".env" ]; then
         echo "Loading JWT_SECRET from .env..."
-        export $(grep "^JWT_SECRET=" .env | xargs)
+        # Use safer parsing that handles special characters
+        export JWT_SECRET=$(grep "^JWT_SECRET=" .env | cut -d= -f2-)
     else
         echo "Fetching JWT_SECRET from K8s..."
         export JWT_SECRET=$(kubectl get secret toolbridge-secret -n toolbridge -o jsonpath='{.data.jwt-secret}' 2>/dev/null | base64 -d)
@@ -222,11 +223,11 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
         echo -e "${YELLOW}⚠ JWT_SECRET not found. Integration tests will likely fail.${NC}"
         echo "Create .env file or ensure kubectl access to K8s cluster."
     fi
-    
-    if [ -f "test-mcp-staging.py" ]; then
-        python3 test-mcp-staging.py
+
+    if [ -f "scripts/test-mcp-staging.py" ]; then
+        python3 scripts/test-mcp-staging.py
     else
-        echo -e "${YELLOW}⚠ test-mcp-staging.py not found${NC}"
+        echo -e "${YELLOW}⚠ scripts/test-mcp-staging.py not found${NC}"
     fi
 fi
 
