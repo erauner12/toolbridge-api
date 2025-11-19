@@ -24,6 +24,11 @@ api:
   env: production
   httpAddr: ":8080"
 
+  # MCP (Model Context Protocol) configuration
+  # Enable tenant header validation for MCP deployments
+  mcp:
+    enabled: false  # Set to true to enable tenant header validation
+
   # Resource limits
   resources:
     requests:

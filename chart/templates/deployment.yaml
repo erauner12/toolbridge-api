@@ -128,6 +128,14 @@ spec:
             secretKeyRef:
               name: {{ include "toolbridge-api.secretName" . }}
               key: jwt-secret
+        {{- if .Values.api.mcp.enabled }}
+        # MCP tenant header validation secret
+        - name: TENANT_HEADER_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "toolbridge-api.secretName" . }}
+              key: tenant-header-secret
+        {{- end }}
 
         # Complete DATABASE_URL from secret
         - name: DATABASE_URL
