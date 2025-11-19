@@ -193,15 +193,44 @@ Update `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ## Deployment
 
-See `../docs/SPEC-FASTMCP-INTEGRATION.md` for complete deployment documentation.
+### Option 1: MCP-Only Deployment to Fly.io (Recommended for Staging)
 
-### Quick Deploy to Fly.io
+Deploy only the Python MCP proxy to Fly.io while using an external Go API (e.g., in K8s).
 
+**Complete guide:** See `../docs/DEPLOYMENT-FLYIO.md` for detailed instructions.
+
+**Quick start:**
 ```bash
-# Build Docker image
-docker build -f ../Dockerfile.mcp -t toolbridge-mcp:latest ..
+# Create app
+fly apps create toolbridge-mcp-staging
 
 # Set secrets
+fly secrets set -a toolbridge-mcp-staging \
+  TOOLBRIDGE_GO_API_BASE_URL="https://toolbridgeapi.erauner.dev" \
+  TOOLBRIDGE_TENANT_ID="staging-tenant-001" \
+  TOOLBRIDGE_TENANT_HEADER_SECRET="<secret-from-k8s>"
+
+# Deploy MCP-only image
+fly deploy --config ../fly.staging.toml -a toolbridge-mcp-staging
+```
+
+**Benefits:**
+- ✅ No database setup needed (uses existing K8s DB)
+- ✅ Smaller footprint (Python-only, ~100MB image)
+- ✅ Auto-scale to zero when idle
+- ✅ Fast deployments (<2 minutes)
+
+### Option 2: Full-Stack Deployment (Go + Python)
+
+Deploy both Go API and Python MCP service together using supervisor.
+
+See `../docs/SPEC-FASTMCP-INTEGRATION.md` for complete documentation.
+
+```bash
+# Build full-stack image
+docker build -f ../Dockerfile.mcp -t toolbridge-mcp:latest ..
+
+# Set secrets (includes database)
 fly secrets set -a toolbridge-tenant-abc123 \
   DATABASE_URL="postgres://..." \
   JWT_HS256_SECRET="$(openssl rand -base64 32)" \
