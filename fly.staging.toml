@@ -63,7 +63,7 @@ kill_timeout = "5s"
     timeout = "5s"
     grace_period = "15s"
     method = "GET"
-    path = "/"
+    path = "/sse"
     protocol = "http"
     tls_skip_verify = false
 

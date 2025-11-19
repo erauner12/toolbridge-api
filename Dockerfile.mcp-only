@@ -21,7 +21,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 WORKDIR /app/mcp
 
 # Copy Python project files
-COPY mcp/pyproject.toml mcp/README.md ./
+COPY mcp/pyproject.toml mcp/uv.lock mcp/README.md ./
 
 # Install dependencies into virtual environment
 RUN uv sync --no-dev --frozen
@@ -68,5 +68,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
 # Expose MCP service port
 EXPOSE 8001
 
-# Start uvicorn server
-CMD ["uvicorn", "toolbridge_mcp.server:mcp", "--host", "0.0.0.0", "--port", "8001", "--log-level", "info"]
+# Start FastMCP server directly
+CMD ["python", "-m", "toolbridge_mcp.server"]
