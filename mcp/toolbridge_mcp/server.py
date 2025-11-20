@@ -19,10 +19,35 @@ logger.add(
     colorize=True,
 )
 
-# Initialize Auth0 token manager if credentials configured
-auth_mode = settings.auth_mode()
+# Runtime authentication mode tracking
+# This tracks the *actual* auth mode in use, which may differ from configured mode
+# if Auth0 initialization fails and we fall back to static/passthrough
+_runtime_auth_mode = settings.auth_mode()
+_auth0_init_failed = False
 
-if auth_mode == "auth0":
+
+def get_runtime_auth_mode() -> str:
+    """
+    Get the actual runtime authentication mode.
+
+    This may differ from settings.auth_mode() if Auth0 initialization failed
+    and the server fell back to static/passthrough mode.
+
+    Returns:
+        Actual auth mode: "auth0", "static", or "passthrough"
+    """
+    return _runtime_auth_mode
+
+
+def auth0_init_failed() -> bool:
+    """Check if Auth0 initialization failed during startup."""
+    return _auth0_init_failed
+
+
+# Initialize Auth0 token manager if credentials configured
+configured_auth_mode = settings.auth_mode()
+
+if configured_auth_mode == "auth0":
     from toolbridge_mcp.auth import init_token_manager, shutdown_token_manager
     import asyncio
 
@@ -49,9 +74,22 @@ if auth_mode == "auth0":
 
     except Exception as e:
         logger.error(f"Failed to initialize Auth0 token manager: {e}")
-        logger.warning("Falling back to static/passthrough authentication mode")
+        _auth0_init_failed = True
 
-elif auth_mode == "static":
+        # Fall back to static token if available, otherwise passthrough
+        if settings.jwt_token:
+            _runtime_auth_mode = "static"
+            logger.warning(
+                "⚠ Falling back to static JWT token mode due to Auth0 initialization failure"
+            )
+        else:
+            _runtime_auth_mode = "passthrough"
+            logger.warning(
+                "⚠ Falling back to passthrough mode (per-user tokens from MCP headers) "
+                "due to Auth0 initialization failure"
+            )
+
+elif configured_auth_mode == "static":
     logger.warning(
         "⚠ Using static JWT token (DEPRECATED) - "
         "Configure TOOLBRIDGE_AUTH0_CLIENT_ID/SECRET for automatic refresh"
@@ -80,21 +118,38 @@ async def health_check() -> dict:
     """Check MCP server health status."""
     from toolbridge_mcp.auth import get_token_manager
 
+    runtime_mode = get_runtime_auth_mode()
+    configured_mode = settings.auth_mode()
+
     status = {
         "status": "healthy",
         "tenant_id": settings.tenant_id,
         "go_api_base_url": settings.go_api_base_url,
-        "auth_mode": settings.auth_mode(),
+        "auth_mode": runtime_mode,
     }
 
-    # Add Auth0 token status if available
-    if auth_mode == "auth0":
+    # Show if runtime mode differs from configured mode (fallback occurred)
+    if runtime_mode != configured_mode:
+        status["auth_mode_note"] = (
+            f"Configured for {configured_mode} but running in {runtime_mode} mode "
+            f"due to initialization failure"
+        )
+        status["auth0_init_failed"] = True
+
+    # Add Auth0 token status if running in auth0 mode
+    if runtime_mode == "auth0":
         token_manager = get_token_manager()
         if token_manager:
             status["auth0_status"] = {
                 "last_refresh_success": token_manager.last_refresh_success,
-                "expires_at": token_manager.expires_at.isoformat() + "Z" if token_manager.expires_at else None,
-                "last_refresh_at": token_manager.last_refresh_at.isoformat() + "Z" if token_manager.last_refresh_at else None,
+                "expires_at": (
+                    token_manager.expires_at.isoformat() + "Z" if token_manager.expires_at else None
+                ),
+                "last_refresh_at": (
+                    token_manager.last_refresh_at.isoformat() + "Z"
+                    if token_manager.last_refresh_at
+                    else None
+                ),
                 "failure_count": token_manager.failure_count,
             }
 

@@ -16,11 +16,13 @@ from pydantic import BaseModel
 
 class TokenError(Exception):
     """Raised when token acquisition fails after retries."""
+
     pass
 
 
 class TokenResponse(BaseModel):
     """Auth0 token response."""
+
     access_token: str
     expires_in: int
     token_type: str
@@ -200,9 +202,7 @@ class TokenManager:
 
             except Exception as e:
                 self._failure_count += 1
-                logger.error(
-                    f"Auth0 token request failed (attempt {attempt}/{max_attempts}): {e}"
-                )
+                logger.error(f"Auth0 token request failed (attempt {attempt}/{max_attempts}): {e}")
 
             # Exponential backoff before retry (except on last attempt)
             if attempt < max_attempts:

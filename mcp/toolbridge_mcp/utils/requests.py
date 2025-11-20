@@ -45,6 +45,9 @@ async def get_auth_header() -> str:
     2. Static token: Use pre-configured JWT_TOKEN (deprecated)
     3. Passthrough: Extract from MCP request Authorization header (per-user mode)
 
+    Uses the runtime auth mode which may differ from configured mode if Auth0
+    initialization failed during startup (automatic fallback to static/passthrough).
+
     Returns:
         Authorization header value (e.g., "Bearer eyJ...")
 
@@ -53,7 +56,10 @@ async def get_auth_header() -> str:
     """
     global _static_token_warning_shown
 
-    auth_mode = settings.auth_mode()
+    # Import runtime auth mode getter
+    from toolbridge_mcp.server import get_runtime_auth_mode
+
+    auth_mode = get_runtime_auth_mode()
 
     # Mode 1: Auth0 automatic token refresh (recommended)
     if auth_mode == "auth0":
