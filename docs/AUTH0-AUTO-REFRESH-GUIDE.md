@@ -212,6 +212,64 @@ The server auto-detects authentication mode based on configuration:
 **Logs**: `Using per-user authentication mode`
 **Use case**: Future per-user OAuth implementation
 
+## Automatic Fallback on Initialization Failure
+
+If Auth0 TokenManager initialization fails during server startup (bad credentials, network issues, Auth0 outage), the server **automatically falls back** to a working authentication mode:
+
+### Fallback Priority
+
+1. **Static Token Mode** (if `TOOLBRIDGE_JWT_TOKEN` is configured)
+   - Server logs: `⚠ Falling back to static JWT token mode due to Auth0 initialization failure`
+   - All requests use the static token
+   - Requests continue to succeed
+
+2. **Passthrough Mode** (if no static token available)
+   - Server logs: `⚠ Falling back to passthrough mode (per-user tokens from MCP headers) due to Auth0 initialization failure`
+   - Requests must provide Authorization headers
+   - Useful for per-user authentication scenarios
+
+### Health Check During Fallback
+
+The `health_check` tool reports the actual runtime mode:
+
+```json
+{
+  "status": "healthy",
+  "auth_mode": "static",  // Runtime mode (not "auth0")
+  "auth_mode_note": "Configured for auth0 but running in static mode due to initialization failure",
+  "auth0_init_failed": true
+}
+```
+
+### Testing Fallback Behavior
+
+Run the fallback tests to verify graceful degradation:
+
+```bash
+make test-mcp-auth
+```
+
+This test suite simulates Auth0 initialization failures and verifies:
+- ✅ Fallback to static mode when JWT token available
+- ✅ Fallback to passthrough mode when no JWT token
+- ✅ `get_auth_header()` works correctly in fallback modes
+- ✅ Requests succeed despite Auth0 being unavailable
+
+### Recovery from Fallback
+
+When Auth0 becomes available again:
+1. Restart the MCP server
+2. TokenManager initialization will succeed
+3. Server returns to Auth0 auto-refresh mode
+4. Health check shows `"auth_mode": "auth0"` with no fallback note
+
+### Best Practices
+
+1. **Keep static token as backup**: Maintain `TOOLBRIDGE_JWT_TOKEN` in secrets during initial Auth0 rollout
+2. **Monitor fallback events**: Alert on `auth0_init_failed: true` in health checks
+3. **Test fallback regularly**: Run `make test-mcp-auth` as part of CI/CD
+4. **Document recovery**: Ensure team knows fallback is automatic and temporary
+
 ## Troubleshooting
 
 ### Issue: "TokenManager not initialized"
