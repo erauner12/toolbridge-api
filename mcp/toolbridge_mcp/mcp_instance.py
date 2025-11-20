@@ -17,7 +17,7 @@ settings.validate_oauth_config()
 # Create OAuth provider for per-user authentication
 # Users authenticate via claude.ai web UI → browser → Auth0 login
 auth_provider = Auth0Provider(
-    issuer_url=f"https://{settings.oauth_domain}/",  # Auth0 issuer URL
+    config_url=f"https://{settings.oauth_domain}/.well-known/openid-configuration",  # Auth0 discovery URL
     client_id=settings.oauth_client_id,
     client_secret=settings.oauth_client_secret or "",  # Empty string for public clients
     base_url=settings.oauth_base_url,
