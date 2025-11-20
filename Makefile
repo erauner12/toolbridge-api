@@ -170,6 +170,10 @@ test-all:
 	@echo "────────────────────────────────────────────"
 	@$(MAKE) test-e2e
 	@echo ""
+	@echo "Phase 5: MCP Auth Fallback Tests (Python)"
+	@echo "────────────────────────────────────────────"
+	@$(MAKE) test-mcp-auth
+	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "✓ All Tests Passed!"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
