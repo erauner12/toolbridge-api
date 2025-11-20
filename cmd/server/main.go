@@ -130,11 +130,19 @@ func main() {
 			Str("jwks_url", jwksURL).
 			Str("audience", jwtAudience).
 			Msg("Upstream OIDC RS256 authentication enabled")
+
+		// Security warning if audience is not configured
+		if jwtAudience == "" && len(acceptedAudiences) == 0 {
+			log.Warn().
+				Msg("SECURITY WARNING: Upstream OIDC configured without audience validation. " +
+					"This accepts tokens from ANY client in the issuer's tenant. " +
+					"Set JWT_AUDIENCE or MCP_OAUTH_AUDIENCE to restrict token acceptance.")
+		}
 	} else if !isDevMode {
 		log.Info().Msg("HS256 authentication enabled (dev/testing mode)")
 	}
 
-	httpAddr := env("HTTP_ADDR", ":8081")
+	httpAddr := env("HTTP_ADDR", ":8080")
 	httpServer := &http.Server{
 		Addr:         httpAddr,
 		Handler:      srv.Routes(jwtCfg),

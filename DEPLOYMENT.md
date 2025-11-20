@@ -7,7 +7,7 @@
 ### Production Endpoint
 - **Base URL**: `https://toolbridgeapi.erauner.dev/v1`
 - **Protocol**: REST (HTTP/JSON)
-- **Port**: 8081 (HTTP service)
+- **Port**: 8080 (HTTP service)
 
 ### Build Command (Production)
 ```bash
@@ -73,7 +73,7 @@ spec:
   rules:
     - backendRefs:
         - name: toolbridge-api
-          port: 8081  # REST API port
+          port: 8080  # REST API port
 ```
 
 ### Environment Variables
@@ -90,7 +90,7 @@ JWT_JWKS_URL=https://your-app.authkit.app/oauth2/jwks  # Or: https://your-tenant
 JWT_AUDIENCE=https://toolbridgeapi.erauner.dev  # Optional
 
 # Optional
-HTTP_ADDR=:8081  # Default REST API port
+HTTP_ADDR=:8080  # Default REST API port
 ```
 
 **Security Note**: `JWT_HS256_SECRET` is required in production. The server will refuse to start if:
@@ -161,7 +161,7 @@ kubectl logs -n toolbridge -l app=toolbridge-api --tail=100 -f
 ```
 
 Look for:
-- ✅ `"starting HTTP server" addr=":8081"`
+- ✅ `"starting HTTP server" addr=":8080"`
 - ❌ NO `"starting gRPC server"` messages
 
 ## Troubleshooting

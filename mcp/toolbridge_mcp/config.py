@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     tenant_header_secret: str
 
     # Go API connection
-    go_api_base_url: str = "http://localhost:8081"
+    go_api_base_url: str = "http://localhost:8080"
 
     # WorkOS AuthKit Configuration
     # These configure FastMCP's AuthKitProvider for per-user authentication
@@ -24,9 +24,6 @@ class Settings(BaseSettings):
 
     # Public MCP URL (used in OAuth metadata and resource identification)
     public_base_url: str  # e.g., "https://toolbridge-mcp-staging.fly.dev"
-
-    # Optional: resource identifier or audience if you want to validate `aud` claim
-    authkit_audience: str | None = None
 
     # Backend API Configuration
     # The Go API that MCP server calls after token exchange

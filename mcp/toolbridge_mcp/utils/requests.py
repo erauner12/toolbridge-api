@@ -211,7 +211,7 @@ async def call_patch(
         path: API endpoint path (e.g., "/v1/notes/{uid}")
         json: JSON request body (partial update)
 
-    auth_header = await get_backend_auth_header(client)
+    Returns:
         HTTP response
 
     Raises:

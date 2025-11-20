@@ -227,11 +227,15 @@ func ValidateToken(tokenString string, cfg JWTCfg) (string, error) {
 
 	// Extract token_type to differentiate backend tokens from external IdP tokens
 	tokenType, _ := claims["token_type"].(string)
+	issuer, _ := claims["iss"].(string)
 
 	// Backend tokens: Skip issuer/audience checks (internal tokens with token_type="backend")
+	// Legacy backend tokens: HS256 tokens with iss="toolbridge-api" but no token_type claim
 	// External tokens: Validate issuer and audience against upstream IdP config
-	if tokenType == "backend" {
-		// Backend token - validated by signature, no additional checks needed
+	isBackendToken := tokenType == "backend" || (tokenType == "" && issuer == "toolbridge-api")
+
+	if isBackendToken {
+		// Backend token (new or legacy) - validated by signature, no additional checks needed
 	} else {
 		// External IdP token (WorkOS AuthKit, etc.) - validate issuer and audience
 		if cfg.Issuer != "" {

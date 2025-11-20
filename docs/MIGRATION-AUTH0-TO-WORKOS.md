@@ -53,7 +53,7 @@ auth_provider = Auth0Provider(
 from fastmcp.server.auth.providers.workos import AuthKitProvider
 auth_provider = AuthKitProvider(
     authkit_domain=settings.authkit_domain,
-    resource_base_url=settings.public_base_url,
+    base_url=settings.public_base_url,
 )
 ```
 
@@ -237,6 +237,49 @@ api:
     jwksUrl: "https://dev-zysv6k3xo7pkwmcb.us.auth0.com/.well-known/jwks.json"
     audience: "https://toolbridgeapi.erauner.dev"
 ```
+
+### Legacy Backend JWT Tokens
+
+Existing HS256 backend tokens **without** `token_type="backend"` are automatically recognized as backend tokens if they have `iss="toolbridge-api"`. This ensures zero-downtime migration.
+
+New tokens issued via `/auth/token-exchange` include `token_type="backend"` for explicit identification.
+
+## Security Considerations
+
+### Audience Validation (IMPORTANT)
+
+**⚠️ SECURITY NOTICE**: When configuring upstream OIDC (`JWT_ISSUER` + `JWT_JWKS_URL`), you should **always configure `JWT_AUDIENCE`** or additional accepted audiences via `MCP_OAUTH_AUDIENCE`.
+
+Without audience validation:
+- The API will accept **any token** issued by the IdP, regardless of the `aud` claim
+- This means tokens scoped to other applications in the same tenant will be accepted
+- Example: A token meant for `https://other-app.example.com` would be accepted
+
+**Recommended configuration**:
+```yaml
+api:
+  jwt:
+    issuer: "https://svelte-monolith-27-staging.authkit.app"
+    jwksUrl: "https://svelte-monolith-27-staging.authkit.app/oauth2/jwks"
+    audience: "https://toolbridgeapi.erauner.dev"  # ✅ Explicitly set
+
+  mcp:
+    enabled: true
+    oauthAudience: "https://toolbridge-mcp.fly.dev"  # ✅ Accept MCP tokens
+```
+
+The Go API will log a warning if OIDC is configured without audience validation.
+
+### Option 2 (MCP-Issued RS256 JWTs) Requirements
+
+If using Option 2 (MCP server issues RS256 backend JWTs), note that:
+
+1. **JWKS Setup Required**: The Go API validates RS256 tokens exclusively against `JWT_JWKS_URL`
+2. **Public Key Exposure**: You must expose the public half of `TOOLBRIDGE_JWT_SIGNING_KEY` via a JWKS endpoint
+3. **Token Header**: RS256 tokens must include a `kid` (key ID) header matching a key in the JWKS
+4. **Configuration**: Set `JWT_ISSUER` and `JWT_JWKS_URL` to point at your JWKS endpoint
+
+**Recommendation**: Option 2 is primarily for advanced/custom setups. Most deployments should use Option 1 (backend `/auth/token-exchange` endpoint) which uses HS256 tokens and doesn't require JWKS management.
 
 ## Testing Plan
 
