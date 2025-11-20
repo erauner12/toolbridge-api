@@ -1,8 +1,8 @@
 """
 HTTP request helpers for calling the Go API with per-user authentication.
 
-Path B OAuth 2.1 Flow:
-1. FastMCP validates user OAuth token via Auth0Provider
+WorkOS AuthKit OAuth 2.1 Flow:
+1. FastMCP validates user OAuth token via AuthKitProvider
 2. Token exchange converts MCP token → backend JWT
 3. Backend JWT sent to Go API with tenant headers
 4. Go API validates backend JWT and creates per-user session
@@ -29,16 +29,16 @@ class AuthorizationError(Exception):
 async def get_backend_auth_header(client: httpx.AsyncClient) -> str:
     """
     Get Authorization header for backend API calls.
-    
+
     Exchanges MCP OAuth token for backend JWT via token_exchange module.
-    FastMCP has already validated the user's OAuth token via Auth0Provider.
-    
+    FastMCP has already validated the user's OAuth token via AuthKitProvider.
+
     Args:
         client: httpx client for token exchange requests
-        
+
     Returns:
         Authorization header value (e.g., "Bearer eyJ...")
-        
+
     Raises:
         AuthorizationError: If token exchange fails
     """
