@@ -214,22 +214,16 @@ api:
 
 ### Still Using Auth0?
 
-The migration is **backward compatible**. To continue using Auth0, set:
+The **Go API** is backward compatible with Auth0 (or any OIDC provider) via generic JWT configuration:
 
-**Python MCP**:
-```bash
-TOOLBRIDGE_AUTHKIT_DOMAIN=dev-zysv6k3xo7pkwmcb.us.auth0.com
-TOOLBRIDGE_PUBLIC_BASE_URL=https://toolbridge-mcp-staging.fly.dev
-```
-
-**Go API**:
+**Go API (Auth0 Configuration)**:
 ```bash
 JWT_ISSUER=https://dev-zysv6k3xo7pkwmcb.us.auth0.com
 JWT_JWKS_URL=https://dev-zysv6k3xo7pkwmcb.us.auth0.com/.well-known/jwks.json
 JWT_AUDIENCE=https://toolbridgeapi.erauner.dev
 ```
 
-**Helm Values**:
+**Helm Values (Auth0 Configuration)**:
 ```yaml
 api:
   jwt:
@@ -237,6 +231,15 @@ api:
     jwksUrl: "https://dev-zysv6k3xo7pkwmcb.us.auth0.com/.well-known/jwks.json"
     audience: "https://toolbridgeapi.erauner.dev"
 ```
+
+**⚠️ Important: Python MCP is WorkOS AuthKit Only**
+
+The Python MCP server in this branch uses `AuthKitProvider`, which is **WorkOS-specific**. To use Auth0 or another OIDC provider with the MCP server, you would need to:
+
+1. Implement a custom OAuth provider for FastMCP, or
+2. Use a different authentication mechanism
+
+The `AuthKitProvider` cannot be configured to work with Auth0 by simply changing the domain. If you need Auth0 support for the MCP server, consider staying on the previous branch or implementing a custom provider.
 
 ### Legacy Backend JWT Tokens
 

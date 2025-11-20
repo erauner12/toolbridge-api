@@ -24,7 +24,7 @@ logger.add(sys.stderr, level="INFO", format="<level>{message}</level>", colorize
 
 # Configuration
 MCP_SSE_URL = "http://localhost:8001/sse"
-GO_API_URL = "http://localhost:8081"
+GO_API_URL = "http://localhost:8080"
 JWT_SECRET = "dev-secret"
 USER_ID = f"e2e-test-{int(time.time())}"
 

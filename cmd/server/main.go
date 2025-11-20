@@ -139,7 +139,7 @@ func main() {
 					"Set JWT_AUDIENCE or MCP_OAUTH_AUDIENCE to restrict token acceptance.")
 		}
 	} else if !isDevMode {
-		log.Info().Msg("HS256 authentication enabled (dev/testing mode)")
+		log.Info().Msg("HS256-only authentication enabled (no upstream OIDC configured)")
 	}
 
 	httpAddr := env("HTTP_ADDR", ":8080")

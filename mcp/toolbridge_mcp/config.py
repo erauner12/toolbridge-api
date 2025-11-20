@@ -42,6 +42,7 @@ class Settings(BaseSettings):
 
     # Security
     # Timestamp validation window in seconds (default 5 minutes)
+    # Reserved for future timestamp validation - currently unused
     max_timestamp_skew_seconds: int = 300
 
     model_config = SettingsConfigDict(

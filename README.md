@@ -58,14 +58,14 @@ Migrations run automatically on first start (via docker-compose `initdb.d`).
 
 ```bash
 make dev
-# Server starts at http://localhost:8081
+# Server starts at http://localhost:8080
 ```
 
 ### 3. Test Sync
 
 **Create a test user:**
 ```bash
-curl -X POST http://localhost:8081/v1/sync/notes/push \
+curl -X POST http://localhost:8080/v1/sync/notes/push \
   -H 'X-Debug-Sub: demo-user' \
   -H 'Content-Type: application/json' \
   -d '{
@@ -84,7 +84,7 @@ curl -X POST http://localhost:8081/v1/sync/notes/push \
 
 **Pull notes:**
 ```bash
-curl 'http://localhost:8081/v1/sync/notes/pull?limit=100' \
+curl 'http://localhost:8080/v1/sync/notes/pull?limit=100' \
   -H 'X-Debug-Sub: demo-user'
 ```
 
@@ -116,7 +116,7 @@ curl 'http://localhost:8081/v1/sync/notes/pull?limit=100' \
 |----------|---------|-------------|
 | `DATABASE_URL` | (required) | Postgres connection string |
 | `JWT_HS256_SECRET` | `dev-secret-change-in-production` | JWT signing secret |
-| `HTTP_ADDR` | `:8081` | HTTP server address |
+| `HTTP_ADDR` | `:8080` | HTTP server address |
 | `ENV` | `dev` | Environment (`dev` enables pretty logs) |
 | `TENANT_HEADER_SECRET` | (optional) | HMAC secret for tenant header validation (MCP mode) |
 
@@ -392,7 +392,7 @@ make docker-build
 
 **Run with Docker:**
 ```bash
-docker run -p 8081:8081 \
+docker run -p 8080:8080 \
   -e DATABASE_URL=postgres://user:pass@host:5432/db \
   -e JWT_HS256_SECRET=your-secret \
   toolbridge-api:latest
