@@ -73,10 +73,17 @@ func main() {
 
 	// Additional accepted audiences (for MCP OAuth tokens, token exchange, etc.)
 	// These are in addition to the primary JWT_AUDIENCE
+	// Supports comma-separated list for multiple audiences
 	acceptedAudiences := []string{}
 	if mcpAudience := env("MCP_OAUTH_AUDIENCE", ""); mcpAudience != "" {
-		acceptedAudiences = append(acceptedAudiences, mcpAudience)
-		log.Info().Str("mcp_audience", mcpAudience).Msg("MCP OAuth audience accepted")
+		audiences := strings.Split(mcpAudience, ",")
+		for _, aud := range audiences {
+			trimmed := strings.TrimSpace(aud)
+			if trimmed != "" {
+				acceptedAudiences = append(acceptedAudiences, trimmed)
+				log.Info().Str("mcp_audience", trimmed).Msg("MCP OAuth audience accepted")
+			}
+		}
 	}
 
 	jwtCfg := auth.JWTCfg{
