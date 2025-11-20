@@ -64,7 +64,7 @@ async def exchange_for_backend_jwt(
         response = await http_client.post(
             f"{settings.go_api_base_url}/auth/token-exchange",
             headers={
-                "Authorization": f"Bearer {token.raw_token}",
+                "Authorization": f"Bearer {token.token}",
                 "Content-Type": "application/json",
             },
             json={
@@ -97,7 +97,7 @@ async def exchange_for_backend_jwt(
             email=email,
             tenant_id=tenant_id,
             scopes=token.scopes or [],
-            raw_token=token.raw_token,
+            raw_token=token.token,
         )
         return backend_jwt
     
