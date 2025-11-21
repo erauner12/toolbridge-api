@@ -133,7 +133,9 @@ async def test_mcp_sse_connection():
                 "Authorization": f"Bearer {token}",
             }
 
-            # Post to SSE endpoint
+            # Note: For local testing we POST JSON-RPC to /sse rather than holding a long-lived SSE stream.
+            # This is sufficient to verify MCP request handling without full streaming semantics.
+            # FastMCP's SSE transport accepts both modes for testing convenience.
             response = await client.post(
                 MCP_SSE_URL,
                 json=init_request,

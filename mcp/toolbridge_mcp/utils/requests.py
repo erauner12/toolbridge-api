@@ -18,7 +18,6 @@ from loguru import logger
 
 from toolbridge_mcp.auth import exchange_for_backend_jwt, extract_user_id_from_backend_jwt
 from toolbridge_mcp.utils.session import create_session
-from toolbridge_mcp.config import settings
 
 
 class AuthorizationError(Exception):
