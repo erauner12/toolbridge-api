@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -74,6 +75,13 @@ func main() {
 	// Additional accepted audiences (for MCP OAuth tokens, token exchange, etc.)
 	// These are in addition to the primary JWT_AUDIENCE
 	// Supports comma-separated list for multiple audiences
+	//
+	// TODO(WORKAROUND): This CSV parsing is a TEMPORARY workaround for accepting
+	// WorkOS AuthKit client IDs (e.g., client_01KABXHNQ09QGWEX4APPYG2AH5) as audiences.
+	// The PROPER FIX is to configure FastMCP's AuthKitProvider to serve the
+	// /.well-known/oauth-protected-resource endpoint correctly, which tells Claude.ai
+	// what audience to request during OAuth (should be the MCP server URL, not client ID).
+	// This workaround should be removed once the oauth-protected-resource endpoint works.
 	acceptedAudiences := []string{}
 	if mcpAudience := env("MCP_OAUTH_AUDIENCE", ""); mcpAudience != "" {
 		audiences := strings.Split(mcpAudience, ",")
