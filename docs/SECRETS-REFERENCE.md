@@ -29,8 +29,8 @@ stringData:
   password: <generated-postgres-password>
   database-url: postgres://toolbridge:<password>@toolbridge-api-postgres-rw.toolbridge.svc.cluster.local:5432/toolbridge?sslmode=require
 
-  # JWT configuration (HS256 for dev, Auth0 RS256 for production)
-  jwt-secret: <generated-hs256-secret>  # Only needed if using HS256
+  # JWT configuration (HS256 for backend tokens, OIDC RS256 for production)
+  jwt-secret: <generated-hs256-secret>  # Required for backend token signing
 
   # Tenant header authentication (CRITICAL - must match Fly.io)
   tenant-header-secret: <generated-tenant-secret>
@@ -42,7 +42,7 @@ stringData:
 # PostgreSQL password
 openssl rand -base64 32
 
-# JWT HS256 secret (if not using Auth0)
+# JWT HS256 secret (required for backend token signing)
 openssl rand -base64 32
 
 # Tenant header secret (SAVE THIS - needed for Fly.io)
@@ -75,8 +75,9 @@ Non-secret configuration:
 ```yaml
 api:
   env: production
-  auth0:
-    domain: "dev-zysv6k3xo7pkwmcb.us.auth0.com"
+  oidc:
+    issuer: "https://svelte-monolith-27-staging.authkit.app"
+    jwksUrl: "https://svelte-monolith-27-staging.authkit.app/oauth2/jwks"
     audience: "https://toolbridgeapi.erauner.dev"
 
 secrets:

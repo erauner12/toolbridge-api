@@ -82,7 +82,7 @@ async def list_notes(
         >>> await list_notes(include_deleted=True)
     """
     # Optional: Get authenticated user info for logging
-    # FastMCP has already validated the OAuth token via Auth0Provider
+    # FastMCP has already validated the OAuth token via OIDC provider (AuthKitProvider)
     try:
         token = get_access_token()
         user_id = token.claims.get("sub", "unknown")

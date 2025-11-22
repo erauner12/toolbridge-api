@@ -69,7 +69,7 @@ This PR establishes the foundational architecture for gRPC Phase 1, enabling par
 
 Mirrors HTTP middleware stack:
 - **CorrelationIDInterceptor**: Request tracing with correlation IDs
-- **AuthInterceptor**: JWT validation (HS256 and RS256 via Auth0)
+- **AuthInterceptor**: JWT validation (HS256 and RS256 via OIDC/JWKS)
 - **SessionInterceptor**: Validates X-Sync-Session header
 - **EpochInterceptor**: Detects epoch mismatch for wipe/reset coordination
 - **RecoveryInterceptor**: Panic recovery

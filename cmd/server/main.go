@@ -55,7 +55,7 @@ func main() {
 	isDevMode := env("ENV", "") == "dev"
 
 	// Generic OIDC provider configuration for production RS256 tokens
-	// Supports any OIDC provider (WorkOS AuthKit, Auth0, Okta, etc.)
+	// Supports any OIDC-compliant provider (WorkOS AuthKit, Okta, Keycloak, etc.)
 	jwtIssuer := env("JWT_ISSUER", "")
 	jwksURL := env("JWT_JWKS_URL", "")
 	jwtAudience := env("JWT_AUDIENCE", "")

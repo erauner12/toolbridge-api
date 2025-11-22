@@ -154,7 +154,7 @@ func (c *jwksCache) getPublicKey(kid string) (*rsa.PublicKey, error) {
 	c.mu.RUnlock()
 
 	if !ok {
-		// Key not found in cache - force refresh to handle Auth0 key rotation
+		// Key not found in cache - force refresh to handle OIDC provider key rotation
 		// Even if cache is fresh, we need to fetch new keys when kid is missing
 		if err := c.fetchJWKS(true); err != nil {
 			return nil, fmt.Errorf("failed to fetch JWKS for missing key %s: %w", kid, err)

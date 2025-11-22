@@ -1,7 +1,7 @@
 """
 DEPRECATED: This test file is no longer relevant for Path B OAuth 2.1.
 
-Path B uses FastMCP's Auth0Provider for per-user authentication,
+Path B uses FastMCP's OIDC provider (AuthKitProvider) for per-user authentication,
 eliminating the need for M2M token manager and fallback modes.
 
 Original purpose: Test M2M auth fallback to static/passthrough modes.
