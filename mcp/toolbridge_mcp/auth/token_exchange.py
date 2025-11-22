@@ -192,10 +192,20 @@ def extract_user_id_from_backend_jwt(backend_jwt: str) -> str:
     """
     try:
         # python-jose requires a key parameter even when not verifying signature
+        # We also disable all validation since we're just extracting claims for logging
         decoded = jwt.decode(
             backend_jwt,
-            "",  # Empty key since verify_signature=False
-            options={"verify_signature": False},
+            "",  # Empty key since we're not verifying
+            options={
+                "verify_signature": False,
+                "verify_aud": False,  # Don't validate audience
+                "verify_iat": False,  # Don't validate issued at
+                "verify_exp": False,  # Don't validate expiration
+                "verify_nbf": False,  # Don't validate not before
+                "verify_iss": False,  # Don't validate issuer
+                "verify_sub": False,  # Don't validate subject
+                "verify_jti": False,  # Don't validate JWT ID
+            },
         )
         return decoded.get("sub", "unknown")
     except Exception as e:
