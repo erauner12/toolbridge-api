@@ -398,13 +398,76 @@ api:
     audience: "https://toolbridgeapi.erauner.dev"
 ```
 
+## MCP Transport Migration: SSE → Streamable HTTP
+
+**Migration Date**: 2025-11-22
+**Status**: ✅ Complete
+
+The MCP server transport has been migrated from SSE (Server-Sent Events) to Streamable HTTP with an explicit path.
+
+### What Changed
+
+**MCP Endpoint Path**:
+- **Old**: `https://toolbridge-mcp-staging.fly.dev/sse` (SSE transport)
+- **New**: `https://toolbridge-mcp-staging.fly.dev/mcp` (Streamable HTTP)
+
+**Transport Configuration**:
+```python
+# Before
+mcp.run(transport="sse", host=settings.host, port=settings.port)
+
+# After
+mcp.run(transport="http", host=settings.host, port=settings.port, path="/mcp")
+```
+
+### Why This Change?
+
+1. **Standardization**: Streamable HTTP is the recommended transport for production MCP servers
+2. **Better Integration**: Aligns with MCP best practices and tooling expectations
+3. **Clearer Semantics**: Explicit `/mcp` path makes the endpoint purpose obvious
+4. **Auth Metadata**: OAuth protected resource metadata now correctly reflects `/mcp` endpoint
+
+### Impact on Clients
+
+**⚠️ Breaking Change**: Existing MCP clients configured with the old `/sse` endpoint will need to update their connection URL.
+
+**Claude Desktop / claude.ai Connectors**:
+1. Remove old connector (if configured with `/sse`)
+2. Add new connector with updated URL:
+   - **Old**: `https://toolbridge-mcp-staging.fly.dev` or `.../sse`
+   - **New**: `https://toolbridge-mcp-staging.fly.dev/mcp`
+3. Re-authenticate via browser (WorkOS AuthKit OAuth flow)
+
+**OAuth Metadata Location**:
+- **Old**: `/.well-known/oauth-protected-resource`
+- **New**: `/.well-known/oauth-protected-resource/mcp`
+
+### Files Modified
+
+- `mcp/toolbridge_mcp/server.py` - Transport switch and logging updates
+- `mcp/toolbridge_mcp/mcp_instance.py` - Added clarifying comments about base_url
+- `mcp/.env.example` - Added notes about `/mcp` endpoint
+- `fly.staging.toml` - Updated deployment comments and example URLs
+
+### Testing
+
+Verify the new endpoint:
+```bash
+# Check OAuth metadata
+curl https://toolbridge-mcp-staging.fly.dev/.well-known/oauth-protected-resource/mcp
+
+# Connect with MCP client
+# Update your client URL to: https://toolbridge-mcp-staging.fly.dev/mcp
+```
+
 ## Next Steps
 
 1. ✅ **Code Migration**: Complete (4 commits on `feat/migrate-auth0-to-workos-authkit`)
-2. ⏳ **Deploy to Staging**: Test WorkOS AuthKit flow end-to-end
-3. ⏳ **Production Deployment**: Update production Helm values and secrets
-4. ⏳ **Archive Auth0 Docs**: Move Auth0-specific docs to `_archive/` (optional cleanup)
-5. ⏳ **Update Claude Connectors**: Reconfigure claude.ai connectors for WorkOS
+2. ✅ **Transport Migration**: Complete (SSE → HTTP at `/mcp`)
+3. ⏳ **Deploy to Staging**: Test WorkOS AuthKit flow end-to-end with new `/mcp` endpoint
+4. ⏳ **Production Deployment**: Update production Helm values and secrets
+5. ⏳ **Update Claude Connectors**: Reconfigure claude.ai connectors with new `/mcp` URL
+6. ⏳ **Archive Auth0 Docs**: Move Auth0-specific docs to `_archive/` (optional cleanup)
 
 ## Additional Resources
 
