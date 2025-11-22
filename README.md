@@ -11,7 +11,7 @@ Delta sync backend for ToolBridge. Implements Last-Write-Wins (LWW) conflict res
 **Tech Stack:**
 - Go 1.22
 - PostgreSQL 16
-- JWT authentication (HS256 backend tokens + OIDC RS256 via JWKS; primary provider: WorkOS AuthKit, compatible with Auth0/Okta/etc.)
+- JWT authentication (HS256 backend tokens + OIDC RS256 via JWKS; primary provider: WorkOS AuthKit, compatible with any OIDC provider)
 - Chi HTTP router
 - REST API (production)
 
@@ -23,7 +23,7 @@ Delta sync backend for ToolBridge. Implements Last-Write-Wins (LWW) conflict res
 - **Idempotency**: Duplicate pushes with same timestamp don't bump version
 
 **Authentication:**
-For details on migrating from Auth0 to WorkOS AuthKit and generic OIDC configuration, see [`docs/MIGRATION-AUTH0-TO-WORKOS.md`](./docs/MIGRATION-AUTH0-TO-WORKOS.md).
+For details on generic OIDC configuration with WorkOS AuthKit, see [`docs/MIGRATION-AUTH0-TO-WORKOS.md`](./docs/MIGRATION-AUTH0-TO-WORKOS.md).
 
 ## Project Structure
 

@@ -84,9 +84,9 @@ ENV=production  # Disables X-Debug-Sub header
 JWT_HS256_SECRET=<strong-secret>  # Required in production (even with upstream OIDC)
 
 # Upstream OIDC RS256 JWT validation (recommended for production)
-# Supports WorkOS AuthKit, Auth0, Okta, or any OIDC provider
-JWT_ISSUER=https://your-app.authkit.app  # Or: https://your-tenant.auth0.com
-JWT_JWKS_URL=https://your-app.authkit.app/oauth2/jwks  # Or: https://your-tenant.auth0.com/.well-known/jwks.json
+# Supports WorkOS AuthKit, Okta, Keycloak, or any OIDC-compliant provider
+JWT_ISSUER=https://your-app.authkit.app  # Or: https://your-tenant.okta.com
+JWT_JWKS_URL=https://your-app.authkit.app/oauth2/jwks  # Or: https://your-tenant.okta.com/oauth2/v1/keys
 JWT_AUDIENCE=https://toolbridgeapi.erauner.dev  # Optional
 
 # MCP OAuth Audience (for MCP server integration)

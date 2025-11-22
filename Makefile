@@ -28,7 +28,7 @@ help:
 	@echo "  make test-integration - Run HTTP integration tests (requires DB)"
 	@echo "  make test-grpc        - Run gRPC integration tests (requires DB)"
 	@echo "  make test-smoke       - Run smoke tests against running server"
-	@echo "  make test-mcp-auth    - Run MCP auth fallback tests (Auth0 failure scenarios)"
+	@echo "  make test-mcp-auth    - Run MCP auth fallback tests (OIDC failure scenarios)"
 	@echo "  make test-e2e         - Run end-to-end tests (starts server, runs smoke, stops)"
 	@echo "  make test-all         - Run complete test suite (unit + HTTP + gRPC + e2e)"
 	@echo "  make ci               - Run CI pipeline locally (lint + test-all)"
@@ -110,7 +110,7 @@ test-smoke:
 	@echo "Running smoke tests..."
 	@./scripts/smoke-test.sh
 
-# Run MCP auth fallback tests (unit tests for Auth0 fallback behavior)
+# Run MCP auth fallback tests (unit tests for OIDC fallback behavior)
 test-mcp-auth:
 	@echo "Running MCP auth fallback tests..."
 	cd mcp && uv run python test_auth_fallback.py
