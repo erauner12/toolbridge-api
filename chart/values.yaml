@@ -36,7 +36,11 @@ api:
   # Enable tenant header validation for MCP deployments
   mcp:
     enabled: false  # Set to true to enable tenant header validation
-    oauthAudience: ""  # Optional: MCP OAuth audience for Path B (e.g., https://toolbridge-mcp.fly.dev)
+    oauthAudience: ""  # MCP OAuth audience - MUST equal the `resource` value from the MCP
+                       # server's /.well-known/oauth-protected-resource/{path} endpoint.
+                       # This is typically the MCP SSE endpoint URL.
+                       # Example: https://toolbridge-mcp-staging.fly.dev/sse
+                       # Discovery: curl https://your-mcp-server/.well-known/oauth-protected-resource/sse
 
   # Resource limits
   resources:

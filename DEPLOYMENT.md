@@ -89,6 +89,11 @@ JWT_ISSUER=https://your-app.authkit.app  # Or: https://your-tenant.auth0.com
 JWT_JWKS_URL=https://your-app.authkit.app/oauth2/jwks  # Or: https://your-tenant.auth0.com/.well-known/jwks.json
 JWT_AUDIENCE=https://toolbridgeapi.erauner.dev  # Optional
 
+# MCP OAuth Audience (for MCP server integration)
+# MUST match the `resource` from MCP's /.well-known/oauth-protected-resource/{path}
+# Discovery: curl https://toolbridge-mcp-staging.fly.dev/.well-known/oauth-protected-resource/sse
+MCP_OAUTH_AUDIENCE=https://toolbridge-mcp-staging.fly.dev/sse
+
 # Optional
 HTTP_ADDR=:8080  # Default REST API port
 ```

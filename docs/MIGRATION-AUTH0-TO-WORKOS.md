@@ -201,7 +201,7 @@ api:
 
   mcp:
     enabled: true
-    oauthAudience: "https://toolbridge-mcp.fly.dev"  # Accept MCP OAuth tokens
+    oauthAudience: "https://toolbridge-mcp-staging.fly.dev/sse"  # MUST match MCP `resource`
 ```
 
 **How It Works**:
@@ -268,10 +268,29 @@ api:
 
   mcp:
     enabled: true
-    oauthAudience: "https://toolbridge-mcp.fly.dev"  # ✅ Accept MCP tokens
+    oauthAudience: "https://toolbridge-mcp-staging.fly.dev/sse"  # ✅ Accept MCP tokens
 ```
 
 The Go API will log a warning if OIDC is configured without audience validation.
+
+### MCP Resource Audience (IMPORTANT)
+
+The Python MCP server (FastMCP + `AuthKitProvider`) exposes `/.well-known/oauth-protected-resource/{path}` and declares a `resource` URL (typically the SSE endpoint). WorkOS AuthKit issues tokens for that resource. The Go API must configure `MCP_OAUTH_AUDIENCE` (and Helm `api.mcp.oauthAudience`) to that same value so that token exchange accepts only tokens minted for the MCP server, not arbitrary AuthKit clients.
+
+**Discovering the MCP resource:**
+```bash
+# Path-based discovery (FastMCP default for SSE transport)
+curl https://toolbridge-mcp-staging.fly.dev/.well-known/oauth-protected-resource/sse
+
+# Response contains the canonical resource ID:
+{
+  "resource": "https://toolbridge-mcp-staging.fly.dev/sse",
+  "authorization_servers": ["https://svelte-monolith-27-staging.authkit.app/"],
+  ...
+}
+```
+
+The `resource` value from this metadata **must** match `MCP_OAUTH_AUDIENCE` in the Go backend configuration. This is typically the MCP server's SSE endpoint URL (base URL + `/sse` path).
 
 ### Option 2 (MCP-Issued RS256 JWTs) Requirements
 
@@ -288,8 +307,19 @@ If using Option 2 (MCP server issues RS256 backend JWTs), note that:
 
 ### 1. MCP Server (Python)
 ```bash
-# Test OAuth metadata endpoint
-curl https://toolbridge-mcp-staging.fly.dev/.well-known/oauth-protected-resource
+# Test MCP protected resource metadata (path-based discovery)
+curl https://toolbridge-mcp-staging.fly.dev/.well-known/oauth-protected-resource/sse
+
+# Expected response (confirms the canonical resource ID):
+{
+  "resource": "https://toolbridge-mcp-staging.fly.dev/sse",
+  "authorization_servers": ["https://svelte-monolith-27-staging.authkit.app/"],
+  "scopes_supported": [],
+  "bearer_methods_supported": ["header"]
+}
+
+# Test WorkOS AuthKit authorization server metadata (forwarded by FastMCP)
+curl https://toolbridge-mcp-staging.fly.dev/.well-known/oauth-authorization-server
 
 # Expected response:
 {
@@ -298,6 +328,8 @@ curl https://toolbridge-mcp-staging.fly.dev/.well-known/oauth-protected-resource
   ...
 }
 ```
+
+**Note:** The `resource` field from the first response should match `MCP_OAUTH_AUDIENCE` in the Go backend configuration.
 
 ### 2. Go API Token Validation
 
@@ -360,7 +392,7 @@ api:
 
   mcp:
     enabled: true
-    oauthAudience: "https://toolbridge-mcp.fly.dev"
+    oauthAudience: "https://toolbridge-mcp.fly.dev/sse"  # MUST match MCP `resource`
 
 # Sync via ArgoCD
 argocd app sync toolbridge-api-production
