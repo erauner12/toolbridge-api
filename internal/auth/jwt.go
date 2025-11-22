@@ -246,7 +246,13 @@ func ValidateToken(tokenString string, cfg JWTCfg) (string, error) {
 
 		// Validate audience if configured
 		// Accepts primary audience OR any of the additional accepted audiences
-		if cfg.Audience != "" || len(cfg.AcceptedAudiences) > 0 {
+		//
+		// Special case: Skip audience validation for WorkOS AuthKit when using DCR
+		// (Dynamic Client Registration). With DCR, each client gets a unique client ID
+		// as the audience, which is unpredictable. We only validate issuer + signature.
+		skipAudienceValidation := cfg.Issuer != "" && issuer == cfg.Issuer && len(cfg.AcceptedAudiences) == 0
+
+		if !skipAudienceValidation && (cfg.Audience != "" || len(cfg.AcceptedAudiences) > 0) {
 			// Build list of all accepted audiences
 			acceptedAuds := []string{}
 			if cfg.Audience != "" {
