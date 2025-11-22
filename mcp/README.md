@@ -148,6 +148,22 @@ TOOLBRIDGE_SHUTDOWN_TIMEOUT_SECONDS=7  # Must be < Fly kill_timeout
 TOOLBRIDGE_UVICORN_ACCESS_LOG=False
 ```
 
+### Testing Graceful Shutdown
+
+Verify that the server handles SIGTERM gracefully without CancelledError tracebacks:
+
+```bash
+# Run automated shutdown test
+./scripts/test-graceful-shutdown.sh
+```
+
+This test:
+- Starts the MCP server
+- Sends SIGTERM after startup
+- Verifies clean shutdown within configured timeout (7s default)
+- Checks logs for proper shutdown messages
+- Ensures no asyncio.CancelledError tracebacks
+
 ### Testing with MCP Inspector
 
 ```bash
