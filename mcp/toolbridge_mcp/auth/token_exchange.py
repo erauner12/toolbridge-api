@@ -191,8 +191,10 @@ def extract_user_id_from_backend_jwt(backend_jwt: str) -> str:
         User ID (sub claim)
     """
     try:
+        # python-jose requires a key parameter even when not verifying signature
         decoded = jwt.decode(
             backend_jwt,
+            "",  # Empty key since verify_signature=False
             options={"verify_signature": False},
         )
         return decoded.get("sub", "unknown")

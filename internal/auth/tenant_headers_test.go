@@ -270,11 +270,7 @@ func TestTenantID_FromContext(t *testing.T) {
 	if gotID := TenantID(ctx); gotID != "" {
 		t.Errorf("Expected empty tenant_id, got %s", gotID)
 	}
-	
-	// Add tenant ID to context
-	ctx = http.Request{}.WithContext(ctx).Context()
-	ctx = http.Request{}.WithContext(ctx).Context()
-	
+
 	// Using the actual middleware pattern
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if gotID := TenantID(r.Context()); gotID != tenantID {
