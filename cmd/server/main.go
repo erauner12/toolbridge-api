@@ -74,24 +74,15 @@ func main() {
 
 	// Additional accepted audiences (for MCP OAuth tokens, token exchange, etc.)
 	// These are in addition to the primary JWT_AUDIENCE
-	// Supports comma-separated list for multiple audiences
 	//
-	// TODO(WORKAROUND): This CSV parsing is a TEMPORARY workaround for accepting
-	// WorkOS AuthKit client IDs (e.g., client_01KABXHNQ09QGWEX4APPYG2AH5) as audiences.
-	// The PROPER FIX is to configure FastMCP's AuthKitProvider to serve the
-	// /.well-known/oauth-protected-resource endpoint correctly, which tells Claude.ai
-	// what audience to request during OAuth (should be the MCP server URL, not client ID).
-	// This workaround should be removed once the oauth-protected-resource endpoint works.
+	// MCP_OAUTH_AUDIENCE MUST equal the `resource` value from the MCP server's
+	// /.well-known/oauth-protected-resource metadata endpoint (path-based discovery).
+	// Example: https://toolbridge-mcp-staging.fly.dev/sse
+	// This ensures only tokens issued for the MCP server are accepted, not arbitrary client IDs.
 	acceptedAudiences := []string{}
-	if mcpAudience := env("MCP_OAUTH_AUDIENCE", ""); mcpAudience != "" {
-		audiences := strings.Split(mcpAudience, ",")
-		for _, aud := range audiences {
-			trimmed := strings.TrimSpace(aud)
-			if trimmed != "" {
-				acceptedAudiences = append(acceptedAudiences, trimmed)
-				log.Info().Str("mcp_audience", trimmed).Msg("MCP OAuth audience accepted")
-			}
-		}
+	if mcpAudience := strings.TrimSpace(env("MCP_OAUTH_AUDIENCE", "")); mcpAudience != "" {
+		acceptedAudiences = append(acceptedAudiences, mcpAudience)
+		log.Info().Str("mcp_audience", mcpAudience).Msg("MCP OAuth audience accepted")
 	}
 
 	jwtCfg := auth.JWTCfg{
@@ -152,6 +143,15 @@ func main() {
 				Msg("SECURITY WARNING: Upstream OIDC configured without audience validation. " +
 					"This accepts tokens from ANY client in the issuer's tenant. " +
 					"Set JWT_AUDIENCE or MCP_OAUTH_AUDIENCE to restrict token acceptance.")
+		}
+
+		// Informational warning if MCP audience might be needed
+		if len(acceptedAudiences) == 0 && jwtAudience != "" {
+			log.Info().
+				Msg("MCP_OAUTH_AUDIENCE not set; MCP-issued tokens will only be accepted " +
+					"if their audience matches JWT_AUDIENCE. " +
+					"Set MCP_OAUTH_AUDIENCE to the MCP server's resource URL " +
+					"(from /.well-known/oauth-protected-resource) if using MCP integration.")
 		}
 	} else if !isDevMode {
 		log.Info().Msg("HS256-only authentication enabled (no upstream OIDC configured)")
