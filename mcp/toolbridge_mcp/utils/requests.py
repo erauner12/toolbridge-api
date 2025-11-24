@@ -37,22 +37,25 @@ class AuthorizationError(Exception):
     pass
 
 
-# Module-level cache for tenant ID (resolved once per MCP server lifetime)
-_cached_tenant_id: Optional[str] = None
+# Per-user tenant cache: key is user_id (from backend JWT), value is tenant_id
+# This prevents cross-tenant data leakage in multi-user MCP deployments
+_tenant_cache: Dict[str, str] = {}
 
 
-def get_cached_tenant_id() -> Optional[str]:
-    """Get cached tenant ID for X-Tenant-ID header."""
-    return _cached_tenant_id
+def get_cached_tenant_id(user_id: str) -> Optional[str]:
+    """Get cached tenant ID for specific user."""
+    return _tenant_cache.get(user_id)
 
 
 async def ensure_tenant_resolved(client: httpx.AsyncClient) -> str:
     """
-    Ensure tenant ID is resolved and cached.
+    Ensure tenant ID is resolved for the current user.
 
     Two modes:
     - Single-tenant: If TENANT_ID configured, use it directly (smoke testing)
     - Multi-tenant: Call /v1/auth/tenant to resolve dynamically (primary mode)
+
+    In multi-tenant mode, tenant is cached per-user to avoid cross-tenant leakage.
 
     Args:
         client: httpx client for tenant resolution API call
@@ -63,18 +66,10 @@ async def ensure_tenant_resolved(client: httpx.AsyncClient) -> str:
     Raises:
         AuthorizationError: If tenant resolution fails
     """
-    global _cached_tenant_id
-
-    # Return cached value if already resolved
-    if _cached_tenant_id:
-        logger.debug(f"Using cached tenant: {_cached_tenant_id}")
-        return _cached_tenant_id
-
     # Single-tenant mode: Use configured TENANT_ID (smoke testing)
     if settings.tenant_id:
-        _cached_tenant_id = settings.tenant_id
-        logger.warning(f"⚠️  Using configured tenant: {_cached_tenant_id} (single-tenant mode)")
-        return _cached_tenant_id
+        logger.warning(f"⚠️  Using configured tenant: {settings.tenant_id} (single-tenant mode)")
+        return settings.tenant_id
 
     # Multi-tenant mode: Resolve tenant dynamically via /v1/auth/tenant
     logger.debug("Resolving tenant dynamically via /v1/auth/tenant (multi-tenant mode)")
@@ -84,15 +79,25 @@ async def ensure_tenant_resolved(client: httpx.AsyncClient) -> str:
         mcp_token = get_access_token()
         id_token = mcp_token.token
 
+        # Exchange for backend JWT to get user ID
+        backend_jwt = await exchange_for_backend_jwt(id_token, client)
+        user_id = extract_user_id_from_backend_jwt(backend_jwt)
+
+        # Check per-user cache first
+        if user_id in _tenant_cache:
+            cached_tenant = _tenant_cache[user_id]
+            logger.debug(f"Using cached tenant for user {user_id}: {cached_tenant}")
+            return cached_tenant
+
         # Call backend tenant resolution endpoint
         tenant_id = await resolve_tenant(
             id_token=id_token,
             api_base_url=settings.go_api_base_url,
         )
 
-        # Cache for subsequent requests
-        _cached_tenant_id = tenant_id
-        logger.success(f"✓ Tenant cached for session: {tenant_id} (multi-tenant mode)")
+        # Cache per-user for subsequent requests
+        _tenant_cache[user_id] = tenant_id
+        logger.success(f"✓ Tenant cached for user {user_id}: {tenant_id} (multi-tenant mode)")
         return tenant_id
 
     except TenantResolutionError as e:
