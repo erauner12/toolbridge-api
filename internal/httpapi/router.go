@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
+	"github.com/workos/workos-go/v6/pkg/usermanagement"
 )
 
 // Server holds dependencies for HTTP handlers
@@ -19,6 +20,7 @@ type Server struct {
 	DB              *pgxpool.Pool
 	RateLimitConfig RateLimitInfo // Centralized rate limit configuration
 	JWTCfg          auth.JWTCfg   // JWT authentication configuration
+	WorkOSClient    *usermanagement.Client // WorkOS client for tenant resolution
 	// Services
 	NoteSvc        *syncservice.NoteService
 	TaskSvc        *syncservice.TaskService
@@ -137,6 +139,11 @@ func (s *Server) Routes(jwt auth.JWTCfg) http.Handler {
 		// Converts MCP OAuth tokens to backend JWTs
 		// No session or tenant headers required (this is used to bootstrap authentication)
 		r.Post("/auth/token-exchange", s.TokenExchange)
+
+		// Tenant resolution via WorkOS API
+		// Returns organization ID for authenticated user
+		// No session or tenant headers required (this is used to resolve tenant before making API calls)
+		r.Get("/v1/auth/tenant", s.ResolveTenant)
 
 		// Session management (no session or rate limit required for these)
 		r.Post("/v1/sync/sessions", s.BeginSession)

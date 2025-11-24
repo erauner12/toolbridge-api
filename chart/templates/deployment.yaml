@@ -160,6 +160,13 @@ spec:
               name: {{ include "toolbridge-api.secretName" . }}
               key: tenant-header-secret
         {{- end }}
+        # WorkOS API key for tenant resolution
+        - name: WORKOS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "toolbridge-api.secretName" . }}
+              key: workos-api-key
+              optional: true
 
         # Complete DATABASE_URL from secret
         - name: DATABASE_URL

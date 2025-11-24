@@ -15,6 +15,7 @@ import (
 	"github.com/erauner12/toolbridge-api/internal/service/syncservice"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/workos/workos-go/v6/pkg/usermanagement"
 )
 
 func env(k, def string) string {
@@ -95,11 +96,24 @@ func main() {
 		TenantClaim:       env("TENANT_CLAIM", ""),
 	}
 
+	// WorkOS client setup (optional - for tenant resolution endpoint)
+	// Initialize WorkOS client with API key from environment
+	// This enables the /v1/auth/tenant endpoint for automatic tenant resolution
+	var workosClient *usermanagement.Client
+	workosAPIKey := env("WORKOS_API_KEY", "")
+	if workosAPIKey != "" {
+		workosClient = usermanagement.NewClient(workosAPIKey)
+		log.Info().Msg("WorkOS client initialized for tenant resolution")
+	} else {
+		log.Info().Msg("WorkOS tenant resolution disabled (WORKOS_API_KEY not set)")
+	}
+
 	// HTTP server setup
 	srv := &httpapi.Server{
 		DB:              pool,
 		RateLimitConfig: httpapi.DefaultRateLimitConfig,
 		JWTCfg:          jwtCfg,
+		WorkOSClient:    workosClient,
 		// Initialize services
 		NoteSvc:        syncservice.NewNoteService(pool),
 		TaskSvc:        syncservice.NewTaskService(pool),
