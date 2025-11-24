@@ -21,6 +21,7 @@ type Server struct {
 	JWTCfg          auth.JWTCfg   // JWT authentication configuration
 	WorkOSClient    *usermanagement.Client // WorkOS client for tenant resolution
 	DefaultTenantID string        // Default tenant ID for B2C users (no organization memberships)
+	TenantAuthCache *auth.TenantAuthCache // In-memory cache for tenant authorization validation
 	// Services
 	NoteSvc        *syncservice.NoteService
 	TaskSvc        *syncservice.TaskService
@@ -147,8 +148,9 @@ func (s *Server) Routes(jwt auth.JWTCfg) http.Handler {
 		r.Group(func(r chi.Router) {
 			// Tenant header validation for multi-tenant MCP deployments
 			// The MCP server authenticates via OAuth and sends X-TB-Tenant-ID header (no HMAC signing)
-			log.Info().Msg("Tenant header validation enabled (simplified, no HMAC)")
-			r.Use(auth.SimpleTenantHeaderMiddleware())
+			// SECURITY: Validates user authorization via WorkOS API with in-memory caching
+			log.Info().Msg("Tenant header validation enabled with WorkOS authorization check")
+			r.Use(auth.SimpleTenantHeaderMiddleware(s.WorkOSClient, s.TenantAuthCache, s.DefaultTenantID))
 
 		// Entity sync endpoints require active session, rate limiting, and epoch validation
 		r.Group(func(r chi.Router) {

@@ -113,6 +113,10 @@ func main() {
 	defaultTenantID := env("DEFAULT_TENANT_ID", "tenant_thinkpen_b2c")
 	log.Info().Str("default_tenant_id", defaultTenantID).Msg("Default B2C tenant configured")
 
+	// Initialize tenant authorization cache (5-minute TTL with background cleanup)
+	tenantAuthCache := auth.NewTenantAuthCache()
+	log.Info().Msg("Tenant authorization cache initialized (5-minute TTL)")
+
 	// HTTP server setup
 	srv := &httpapi.Server{
 		DB:              pool,
@@ -120,6 +124,7 @@ func main() {
 		JWTCfg:          jwtCfg,
 		WorkOSClient:    workosClient,
 		DefaultTenantID: defaultTenantID,
+		TenantAuthCache: tenantAuthCache,
 		// Initialize services
 		NoteSvc:        syncservice.NewNoteService(pool),
 		TaskSvc:        syncservice.NewTaskService(pool),

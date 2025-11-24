@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/workos/workos-go/v6/pkg/usermanagement"
 )
 
 // Tenant context key for storing validated tenant ID
@@ -33,7 +35,74 @@ var (
 	ErrInvalidTimestamp = errors.New("invalid timestamp format")
 	ErrTimestampSkew    = errors.New("timestamp outside acceptable window")
 	ErrInvalidSignature = errors.New("invalid HMAC signature")
+	ErrUnauthorizedTenant = errors.New("user not authorized for tenant")
 )
+
+// TenantAuthCache is a simple in-memory cache for tenant authorization validation
+// Cache key format: "user_id:tenant_id" -> expiry time
+// TTL: 5 minutes (balances security vs. performance)
+type TenantAuthCache struct {
+	mu    sync.RWMutex
+	cache map[string]time.Time
+}
+
+// NewTenantAuthCache creates a new tenant authorization cache
+func NewTenantAuthCache() *TenantAuthCache {
+	cache := &TenantAuthCache{
+		cache: make(map[string]time.Time),
+	}
+
+	// Start background cleanup goroutine to prevent memory leaks
+	go cache.cleanupExpired()
+
+	return cache
+}
+
+// Get checks if a user+tenant combination is cached and not expired
+func (c *TenantAuthCache) Get(userID, tenantID string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	key := fmt.Sprintf("%s:%s", userID, tenantID)
+	expiry, exists := c.cache[key]
+
+	if !exists {
+		return false
+	}
+
+	// Check if expired
+	if time.Now().After(expiry) {
+		return false
+	}
+
+	return true
+}
+
+// Set caches a user+tenant combination with 5-minute TTL
+func (c *TenantAuthCache) Set(userID, tenantID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	key := fmt.Sprintf("%s:%s", userID, tenantID)
+	c.cache[key] = time.Now().Add(5 * time.Minute)
+}
+
+// cleanupExpired removes expired cache entries every minute
+func (c *TenantAuthCache) cleanupExpired() {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		c.mu.Lock()
+		now := time.Now()
+		for key, expiry := range c.cache {
+			if now.After(expiry) {
+				delete(c.cache, key)
+			}
+		}
+		c.mu.Unlock()
+	}
+}
 
 // TenantHeaders contains validated tenant context
 type TenantHeaders struct {
@@ -145,35 +214,125 @@ func TenantHeaderMiddleware(secret string, maxSkewSeconds int64) func(http.Handl
 	}
 }
 
-// SimpleTenantHeaderMiddleware validates only the X-TB-Tenant-ID header (no HMAC signing).
+// validateTenantAuthorization validates that a user is authorized to access a specific tenant.
+// Uses WorkOS API to verify organization membership with in-memory caching.
+//
+// Returns true if authorized, false otherwise.
+func validateTenantAuthorization(ctx context.Context, userID, tenantID string, client *usermanagement.Client, cache *TenantAuthCache, defaultTenantID string) bool {
+	// Check cache first
+	if cache.Get(userID, tenantID) {
+		log.Debug().
+			Str("user_id", userID).
+			Str("tenant_id", tenantID).
+			Msg("tenant authorization cached (valid)")
+		return true
+	}
+
+	// B2C fallback: if tenant is default tenant, allow access
+	// This handles B2C users who don't have organization memberships
+	if tenantID == defaultTenantID {
+		log.Debug().
+			Str("user_id", userID).
+			Str("tenant_id", tenantID).
+			Msg("B2C user accessing default tenant")
+		cache.Set(userID, tenantID)
+		return true
+	}
+
+	// B2B validation: Call WorkOS API to verify organization membership
+	memberships, err := client.ListOrganizationMemberships(ctx, usermanagement.ListOrganizationMembershipsOpts{
+		UserID: userID,
+		Limit:  10,
+	})
+	if err != nil {
+		log.Error().
+			Err(err).
+			Str("user_id", userID).
+			Str("tenant_id", tenantID).
+			Msg("Failed to validate tenant authorization via WorkOS API")
+		return false
+	}
+
+	// Check if user is member of requested organization
+	for _, membership := range memberships.Data {
+		if membership.OrganizationID == tenantID {
+			log.Info().
+				Str("user_id", userID).
+				Str("tenant_id", tenantID).
+				Str("organization_name", membership.OrganizationName).
+				Msg("Tenant authorization validated via WorkOS API")
+			cache.Set(userID, tenantID)
+			return true
+		}
+	}
+
+	log.Warn().
+		Str("user_id", userID).
+		Str("tenant_id", tenantID).
+		Msg("User not authorized for requested tenant (no matching organization membership)")
+	return false
+}
+
+// SimpleTenantHeaderMiddleware validates the X-TB-Tenant-ID header with WorkOS authorization check.
 // This is the recommended middleware for multi-tenant MCP deployments where the MCP server
 // handles authentication via OAuth and sends a plain tenant ID header.
 //
+// SECURITY: Validates that the authenticated user is actually authorized to access the requested tenant
+// by checking organization membership via WorkOS API (with caching).
+//
 // This should be applied AFTER JWT middleware to ensure user authentication is already validated.
-func SimpleTenantHeaderMiddleware() func(http.Handler) http.Handler {
+func SimpleTenantHeaderMiddleware(workosClient *usermanagement.Client, cache *TenantAuthCache, defaultTenantID string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+
 			// Extract tenant ID from header
 			tenantID := r.Header.Get("X-TB-Tenant-ID")
-
 			if tenantID == "" {
 				log.Error().
 					Str("path", r.URL.Path).
 					Str("method", r.Method).
-					Msg("tenant header validation failed")
-				
+					Msg("tenant header validation failed: missing header")
+
 				http.Error(w, "Unauthorized: missing tenant header", http.StatusUnauthorized)
 				return
 			}
 
+			// Extract user ID from JWT context (set by JWT middleware)
+			userID := UserID(ctx)
+			if userID == "" {
+				log.Error().
+					Str("path", r.URL.Path).
+					Str("method", r.Method).
+					Str("tenant_id", tenantID).
+					Msg("tenant header validation failed: missing user ID from JWT context")
+
+				http.Error(w, "Unauthorized: invalid authentication", http.StatusUnauthorized)
+				return
+			}
+
+			// Validate tenant authorization via WorkOS API (with caching)
+			if !validateTenantAuthorization(ctx, userID, tenantID, workosClient, cache, defaultTenantID) {
+				log.Warn().
+					Str("user_id", userID).
+					Str("tenant_id", tenantID).
+					Str("path", r.URL.Path).
+					Str("method", r.Method).
+					Msg("tenant header validation failed: user not authorized for tenant")
+
+				http.Error(w, "Unauthorized: not authorized for requested tenant", http.StatusForbidden)
+				return
+			}
+
 			// Store tenant context in request
-			ctx := context.WithValue(r.Context(), TenantIDKey, tenantID)
+			ctx = context.WithValue(ctx, TenantIDKey, tenantID)
 
 			log.Debug().
+				Str("user_id", userID).
 				Str("tenant_id", tenantID).
 				Str("path", r.URL.Path).
 				Str("method", r.Method).
-				Msg("tenant header validated (no HMAC)")
+				Msg("tenant header validated with authorization check")
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
