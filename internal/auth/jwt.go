@@ -20,7 +20,10 @@ import (
 
 type ctxKey string
 
-const CtxUserID ctxKey = "uid"
+const (
+	CtxUserID  ctxKey = "uid" // Database user ID (app_user.id)
+	CtxSubject ctxKey = "sub" // OIDC subject claim (JWT sub, WorkOS user ID)
+)
 
 // JWTCfg holds JWT authentication configuration
 type JWTCfg struct {
@@ -414,8 +417,9 @@ func Middleware(db *pgxpool.Pool, cfg JWTCfg) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Add user ID to request context
+			// Add user ID and subject to request context
 			ctx := context.WithValue(r.Context(), CtxUserID, userID)
+			ctx = context.WithValue(ctx, CtxSubject, sub)
 
 			// Extract tenant from JWT claims if configured and not already set by header middleware
 			// Precedence: X-TB-Tenant-ID header (if present) > JWT tenant claim > no tenant
@@ -450,10 +454,22 @@ func Middleware(db *pgxpool.Pool, cfg JWTCfg) func(http.Handler) http.Handler {
 	}
 }
 
-// UserID extracts the authenticated user ID from request context
+// UserID extracts the authenticated user ID (database ID) from request context
 // Returns empty string if not authenticated (should never happen after middleware)
 func UserID(ctx context.Context) string {
 	if v := ctx.Value(CtxUserID); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// Subject extracts the OIDC subject claim (JWT sub, WorkOS user ID) from request context
+// Returns empty string if not authenticated (should never happen after middleware)
+// Use this for WorkOS API calls, not UserID() which returns the database primary key
+func Subject(ctx context.Context) string {
+	if v := ctx.Value(CtxSubject); v != nil {
 		if s, ok := v.(string); ok {
 			return s
 		}

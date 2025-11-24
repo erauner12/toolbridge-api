@@ -39,8 +39,9 @@ var (
 )
 
 // TenantAuthCache is a simple in-memory cache for tenant authorization validation
-// Cache key format: "user_id:tenant_id" -> expiry time
+// Cache key format: "subject:tenant_id" -> expiry time
 // TTL: 5 minutes (balances security vs. performance)
+// NOTE: subject is the OIDC subject claim (JWT sub), not the database user ID
 type TenantAuthCache struct {
 	mu    sync.RWMutex
 	cache map[string]time.Time
@@ -58,12 +59,12 @@ func NewTenantAuthCache() *TenantAuthCache {
 	return cache
 }
 
-// Get checks if a user+tenant combination is cached and not expired
-func (c *TenantAuthCache) Get(userID, tenantID string) bool {
+// Get checks if a subject+tenant combination is cached and not expired
+func (c *TenantAuthCache) Get(subject, tenantID string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	key := fmt.Sprintf("%s:%s", userID, tenantID)
+	key := fmt.Sprintf("%s:%s", subject, tenantID)
 	expiry, exists := c.cache[key]
 
 	if !exists {
@@ -78,12 +79,12 @@ func (c *TenantAuthCache) Get(userID, tenantID string) bool {
 	return true
 }
 
-// Set caches a user+tenant combination with 5-minute TTL
-func (c *TenantAuthCache) Set(userID, tenantID string) {
+// Set caches a subject+tenant combination with 5-minute TTL
+func (c *TenantAuthCache) Set(subject, tenantID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	key := fmt.Sprintf("%s:%s", userID, tenantID)
+	key := fmt.Sprintf("%s:%s", subject, tenantID)
 	c.cache[key] = time.Now().Add(5 * time.Minute)
 }
 
@@ -217,12 +218,15 @@ func TenantHeaderMiddleware(secret string, maxSkewSeconds int64) func(http.Handl
 // validateTenantAuthorization validates that a user is authorized to access a specific tenant.
 // Uses WorkOS API to verify organization membership with in-memory caching.
 //
+// IMPORTANT: subject must be the OIDC subject claim (JWT sub), not the database user ID.
+// WorkOS API requires the IdP user ID, which is the JWT sub claim.
+//
 // Returns true if authorized, false otherwise.
-func validateTenantAuthorization(ctx context.Context, userID, tenantID string, client *usermanagement.Client, cache *TenantAuthCache, defaultTenantID string) bool {
+func validateTenantAuthorization(ctx context.Context, subject, tenantID string, client *usermanagement.Client, cache *TenantAuthCache, defaultTenantID string) bool {
 	// Check cache first
-	if cache.Get(userID, tenantID) {
+	if cache.Get(subject, tenantID) {
 		log.Debug().
-			Str("user_id", userID).
+			Str("subject", subject).
 			Str("tenant_id", tenantID).
 			Msg("tenant authorization cached (valid)")
 		return true
@@ -232,22 +236,22 @@ func validateTenantAuthorization(ctx context.Context, userID, tenantID string, c
 	// This handles B2C users who don't have organization memberships
 	if tenantID == defaultTenantID {
 		log.Debug().
-			Str("user_id", userID).
+			Str("subject", subject).
 			Str("tenant_id", tenantID).
 			Msg("B2C user accessing default tenant")
-		cache.Set(userID, tenantID)
+		cache.Set(subject, tenantID)
 		return true
 	}
 
 	// B2B validation: Call WorkOS API to verify organization membership
 	memberships, err := client.ListOrganizationMemberships(ctx, usermanagement.ListOrganizationMembershipsOpts{
-		UserID: userID,
+		UserID: subject, // WorkOS API expects OIDC sub (IdP user ID), not database ID
 		Limit:  10,
 	})
 	if err != nil {
 		log.Error().
 			Err(err).
-			Str("user_id", userID).
+			Str("subject", subject).
 			Str("tenant_id", tenantID).
 			Msg("Failed to validate tenant authorization via WorkOS API")
 		return false
@@ -257,17 +261,17 @@ func validateTenantAuthorization(ctx context.Context, userID, tenantID string, c
 	for _, membership := range memberships.Data {
 		if membership.OrganizationID == tenantID {
 			log.Info().
-				Str("user_id", userID).
+				Str("subject", subject).
 				Str("tenant_id", tenantID).
 				Str("organization_name", membership.OrganizationName).
 				Msg("Tenant authorization validated via WorkOS API")
-			cache.Set(userID, tenantID)
+			cache.Set(subject, tenantID)
 			return true
 		}
 	}
 
 	log.Warn().
-		Str("user_id", userID).
+		Str("subject", subject).
 		Str("tenant_id", tenantID).
 		Msg("User not authorized for requested tenant (no matching organization membership)")
 	return false
@@ -298,23 +302,24 @@ func SimpleTenantHeaderMiddleware(workosClient *usermanagement.Client, cache *Te
 				return
 			}
 
-			// Extract user ID from JWT context (set by JWT middleware)
-			userID := UserID(ctx)
-			if userID == "" {
+			// Extract OIDC subject from JWT context (set by JWT middleware)
+			// NOTE: Use Subject() not UserID() - WorkOS API requires OIDC sub, not database ID
+			subject := Subject(ctx)
+			if subject == "" {
 				log.Error().
 					Str("path", r.URL.Path).
 					Str("method", r.Method).
 					Str("tenant_id", tenantID).
-					Msg("tenant header validation failed: missing user ID from JWT context")
+					Msg("tenant header validation failed: missing subject from JWT context")
 
 				http.Error(w, "Unauthorized: invalid authentication", http.StatusUnauthorized)
 				return
 			}
 
 			// Validate tenant authorization via WorkOS API (with caching)
-			if !validateTenantAuthorization(ctx, userID, tenantID, workosClient, cache, defaultTenantID) {
+			if !validateTenantAuthorization(ctx, subject, tenantID, workosClient, cache, defaultTenantID) {
 				log.Warn().
-					Str("user_id", userID).
+					Str("subject", subject).
 					Str("tenant_id", tenantID).
 					Str("path", r.URL.Path).
 					Str("method", r.Method).
@@ -328,7 +333,7 @@ func SimpleTenantHeaderMiddleware(workosClient *usermanagement.Client, cache *Te
 			ctx = context.WithValue(ctx, TenantIDKey, tenantID)
 
 			log.Debug().
-				Str("user_id", userID).
+				Str("subject", subject).
 				Str("tenant_id", tenantID).
 				Str("path", r.URL.Path).
 				Str("method", r.Method).
