@@ -125,15 +125,8 @@ func (s *Server) Routes(jwt auth.JWTCfg) http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Middleware(s.DB, jwt))
 
-		// Optional tenant header validation for MCP deployments
-		// When TENANT_HEADER_SECRET is set, validates HMAC-signed tenant headers from Python MCP service
-		tenantHeaderSecret := os.Getenv("TENANT_HEADER_SECRET")
-		if tenantHeaderSecret != "" {
-			log.Info().Msg("Tenant header validation enabled for MCP deployment")
-			r.Use(auth.TenantHeaderMiddleware(tenantHeaderSecret, 300)) // 5 minute window
-		} else {
-			log.Debug().Msg("Tenant header validation disabled (non-MCP deployment)")
-		}
+		// Bootstrap endpoints that don't require tenant headers
+		// These are used to discover tenant ID or exchange tokens before tenant is known
 
 		// Token exchange (Path B OAuth 2.1)
 		// Converts MCP OAuth tokens to backend JWTs
@@ -149,6 +142,18 @@ func (s *Server) Routes(jwt auth.JWTCfg) http.Handler {
 		r.Post("/v1/sync/sessions", s.BeginSession)
 		r.Get("/v1/sync/sessions/{id}", s.GetSession)
 		r.Delete("/v1/sync/sessions/{id}", s.EndSession)
+
+		// Routes that require tenant header validation (MCP deployments)
+		r.Group(func(r chi.Router) {
+			// Optional tenant header validation for MCP deployments
+			// When TENANT_HEADER_SECRET is set, validates HMAC-signed tenant headers from Python MCP service
+			tenantHeaderSecret := os.Getenv("TENANT_HEADER_SECRET")
+			if tenantHeaderSecret != "" {
+				log.Info().Msg("Tenant header validation enabled for MCP deployment")
+				r.Use(auth.TenantHeaderMiddleware(tenantHeaderSecret, 300)) // 5 minute window
+			} else {
+				log.Debug().Msg("Tenant header validation disabled (non-MCP deployment)")
+			}
 
 		// Entity sync endpoints require active session, rate limiting, and epoch validation
 		r.Group(func(r chi.Router) {
@@ -234,14 +239,15 @@ func (s *Server) Routes(jwt auth.JWTCfg) http.Handler {
 			r.Post("/v1/chat_messages/{uid}/process", s.ProcessChatMessage)
 		})
 
-		// Wipe & state routes require auth + session, but NO epoch check
-		// (otherwise you can't wipe when epoch is mismatched!)
-		r.Group(func(r chi.Router) {
-			r.Use(SessionRequired)
+			// Wipe & state routes require auth + session, but NO epoch check
+			// (otherwise you can't wipe when epoch is mismatched!)
+			r.Group(func(r chi.Router) {
+				r.Use(SessionRequired)
 
-			r.Post("/v1/sync/wipe", s.WipeAccount)
-			r.Get("/v1/sync/state", s.GetSyncState)
-		})
+				r.Post("/v1/sync/wipe", s.WipeAccount)
+				r.Get("/v1/sync/state", s.GetSyncState)
+			})
+		}) // End tenant header middleware group
 	})
 
 	log.Info().Msg("HTTP routes registered")

@@ -96,6 +96,13 @@ func main() {
 	fmt.Println("   ✓ Token exchange successful")
 	fmt.Println()
 
+	// Print ID token for testing backend endpoint
+	if tokenResp.IDToken != "" {
+		fmt.Println("📋 ID Token (for testing /v1/auth/tenant endpoint):")
+		fmt.Printf("export ID_TOKEN='%s'\n", tokenResp.IDToken)
+		fmt.Println()
+	}
+
 	// Step 6: Decode and inspect tokens
 	fmt.Println("6. Inspecting tokens for organization_id claim...")
 	fmt.Println()
