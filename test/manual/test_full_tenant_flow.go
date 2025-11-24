@@ -32,8 +32,8 @@ const (
 	clientID    = "client_01KAPCBQNQBWMZE9WNSEWY2J3Z"
 	redirectURI = "http://localhost:3000/callback"
 
-	// Organization ID (required for WorkOS AuthKit - specifies which org to authenticate with)
-	organizationID = "org_01KABXHNF45RMV9KBWF3SBGPP0"
+	// B2C Mode: No organization_id required - backend falls back to default tenant
+// 	organizationID = "org_01KABXHNF45RMV9KBWF3SBGPP0"
 )
 
 // Configuration from environment
@@ -242,7 +242,7 @@ func buildAuthorizationURL(authEndpoint, codeChallenge, state string) string {
 	params.Set("code_challenge", codeChallenge)
 	params.Set("code_challenge_method", "S256")
 	params.Set("state", state)
-	params.Set("organization_id", organizationID) // WorkOS-specific parameter
+	// params.Set("organization_id", organizationID) // WorkOS-specific parameter
 
 	return authEndpoint + "?" + params.Encode()
 }
