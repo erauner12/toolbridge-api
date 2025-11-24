@@ -35,9 +35,9 @@ type OrgInfo struct {
 // 4. Returns organization ID(s) for the user
 //
 // Handles multiple scenarios:
-// - Single organization: Returns tenant_id directly
-// - Multiple organizations: Returns all organizations and sets requires_selection=true
-// - No organizations: Returns 404
+// - No organizations (B2C): Returns default tenant "tenant_thinkpen_b2c"
+// - Single organization (B2B): Returns tenant_id directly
+// - Multiple organizations (B2B): Returns all organizations and sets requires_selection=true
 func (s *Server) ResolveTenant(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -90,12 +90,20 @@ func (s *Server) ResolveTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// B2C fallback: if user has no organization memberships, use default tenant
 	if len(memberships.Data) == 0 {
-		log.Warn().
+		const defaultTenantID = "tenant_thinkpen_b2c"
+		log.Info().
 			Str("user_id", sub).
+			Str("tenant_id", defaultTenantID).
 			Str("correlation_id", GetCorrelationID(ctx)).
-			Msg("User not in any organization")
-		writeError(w, r, http.StatusNotFound, "User not in any organization")
+			Msg("B2C user - using default tenant (no organization memberships)")
+
+		writeJSON(w, http.StatusOK, TenantResolveResponse{
+			TenantID:          defaultTenantID,
+			OrganizationName:  "ThinkPen",
+			RequiresSelection: false,
+		})
 		return
 	}
 
