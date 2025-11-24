@@ -89,9 +89,12 @@ async def resolve_tenant(id_token: str, api_base_url: str) -> str:
                 )
 
             org_name = data.get("organization_name", "Unknown")
-            logger.info(
-                f"Tenant resolved successfully: {tenant_id} ({org_name})"
-            )
+
+            # Prominent logging for multi-tenant scenarios
+            logger.info("━" * 70)
+            logger.success(f"🎯 TENANT RESOLVED: {tenant_id}")
+            logger.success(f"🏢 Organization: {org_name}")
+            logger.info("━" * 70)
 
             return tenant_id
 

@@ -7,6 +7,26 @@ Tools are registered via imports from the tools module.
 
 from toolbridge_mcp.config import settings
 from loguru import logger
+import sys
+
+# Custom filter to improve OAuth token expiration logging
+class OAuthTokenFilter:
+    """Filter to provide better context for OAuth token expiration messages."""
+
+    def __call__(self, record):
+        # Check if this is an invalid_token auth error from FastMCP middleware
+        if (
+            record["name"] == "fastmcp.server.auth.middleware"
+            and "Auth error returned: invalid_token" in record["message"]
+        ):
+            # Replace with more informative message
+            record["message"] = (
+                "🔄 OAuth token expired - client will automatically re-authenticate "
+                "(this is normal and expected)"
+            )
+            # Optionally lower the level to DEBUG instead of INFO to reduce noise
+            record["level"] = logger.level("DEBUG")
+        return True
 
 # Configure logging
 logger.remove()  # Remove default handler
@@ -15,6 +35,7 @@ logger.add(
     format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>",
     level=settings.log_level,
     colorize=True,
+    filter=OAuthTokenFilter(),
 )
 
 logger.info("🚀 ToolBridge MCP Server - WorkOS AuthKit Mode")
@@ -25,6 +46,18 @@ logger.info(
     f"✓ OAuth protected resource metadata: "
     f"{settings.public_base_url}/.well-known/oauth-protected-resource"
 )
+
+# Log tenant mode configuration
+if settings.tenant_id:
+    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    logger.warning(f"⚠️  SINGLE-TENANT MODE: Using configured tenant {settings.tenant_id}")
+    logger.warning("⚠️  This mode is for smoke testing only. Production should use multi-tenant mode.")
+    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+else:
+    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    logger.info("🔐 MULTI-TENANT MODE: Tenants will be resolved dynamically via /v1/auth/tenant")
+    logger.info("✓ Each authenticated user's organization will be determined from their ID token")
+    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 # Import MCP server instance (created in mcp_instance.py with AuthKitProvider)
 from toolbridge_mcp.mcp_instance import mcp  # noqa: E402

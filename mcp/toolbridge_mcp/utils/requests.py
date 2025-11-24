@@ -67,12 +67,13 @@ async def ensure_tenant_resolved(client: httpx.AsyncClient) -> str:
 
     # Return cached value if already resolved
     if _cached_tenant_id:
+        logger.debug(f"Using cached tenant: {_cached_tenant_id}")
         return _cached_tenant_id
 
     # Single-tenant mode: Use configured TENANT_ID (smoke testing)
     if settings.tenant_id:
         _cached_tenant_id = settings.tenant_id
-        logger.info(f"Using configured tenant ID: {_cached_tenant_id} (single-tenant mode)")
+        logger.warning(f"⚠️  Using configured tenant: {_cached_tenant_id} (single-tenant mode)")
         return _cached_tenant_id
 
     # Multi-tenant mode: Resolve tenant dynamically via /v1/auth/tenant
@@ -91,7 +92,7 @@ async def ensure_tenant_resolved(client: httpx.AsyncClient) -> str:
 
         # Cache for subsequent requests
         _cached_tenant_id = tenant_id
-        logger.info(f"✓ Tenant resolved and cached: {tenant_id} (multi-tenant mode)")
+        logger.success(f"✓ Tenant cached for session: {tenant_id} (multi-tenant mode)")
         return tenant_id
 
     except TenantResolutionError as e:
