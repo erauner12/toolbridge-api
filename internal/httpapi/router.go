@@ -3,7 +3,6 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
-	"os"
 	"strconv"
 
 	"github.com/erauner12/toolbridge-api/internal/auth"
@@ -145,15 +144,10 @@ func (s *Server) Routes(jwt auth.JWTCfg) http.Handler {
 
 		// Routes that require tenant header validation (MCP deployments)
 		r.Group(func(r chi.Router) {
-			// Optional tenant header validation for MCP deployments
-			// When TENANT_HEADER_SECRET is set, validates HMAC-signed tenant headers from Python MCP service
-			tenantHeaderSecret := os.Getenv("TENANT_HEADER_SECRET")
-			if tenantHeaderSecret != "" {
-				log.Info().Msg("Tenant header validation enabled for MCP deployment")
-				r.Use(auth.TenantHeaderMiddleware(tenantHeaderSecret, 300)) // 5 minute window
-			} else {
-				log.Debug().Msg("Tenant header validation disabled (non-MCP deployment)")
-			}
+			// Tenant header validation for multi-tenant MCP deployments
+			// The MCP server authenticates via OAuth and sends X-TB-Tenant-ID header (no HMAC signing)
+			log.Info().Msg("Tenant header validation enabled (simplified, no HMAC)")
+			r.Use(auth.SimpleTenantHeaderMiddleware())
 
 		// Entity sync endpoints require active session, rate limiting, and epoch validation
 		r.Group(func(r chi.Router) {

@@ -145,6 +145,41 @@ func TenantHeaderMiddleware(secret string, maxSkewSeconds int64) func(http.Handl
 	}
 }
 
+// SimpleTenantHeaderMiddleware validates only the X-TB-Tenant-ID header (no HMAC signing).
+// This is the recommended middleware for multi-tenant MCP deployments where the MCP server
+// handles authentication via OAuth and sends a plain tenant ID header.
+//
+// This should be applied AFTER JWT middleware to ensure user authentication is already validated.
+func SimpleTenantHeaderMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Extract tenant ID from header
+			tenantID := r.Header.Get("X-TB-Tenant-ID")
+
+			if tenantID == "" {
+				log.Error().
+					Str("path", r.URL.Path).
+					Str("method", r.Method).
+					Msg("tenant header validation failed")
+				
+				http.Error(w, "Unauthorized: missing tenant header", http.StatusUnauthorized)
+				return
+			}
+
+			// Store tenant context in request
+			ctx := context.WithValue(r.Context(), TenantIDKey, tenantID)
+
+			log.Debug().
+				Str("tenant_id", tenantID).
+				Str("path", r.URL.Path).
+				Str("method", r.Method).
+				Msg("tenant header validated (no HMAC)")
+
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 // TenantID extracts the logical tenant identifier from request context.
 //
 // IMPORTANT - Tenant Identity Contract:
