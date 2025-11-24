@@ -54,9 +54,17 @@ class TenantDirectTransport(httpx.AsyncBaseTransport):
         """
         # Import here to avoid circular dependency
         from toolbridge_mcp.utils.requests import get_cached_tenant_id
+        from toolbridge_mcp.auth import extract_user_id_from_backend_jwt
 
-        # Get tenant_id (should already be resolved by ensure_tenant_resolved)
-        tenant_id = get_cached_tenant_id()
+        # Extract user ID from Authorization header to look up tenant
+        tenant_id = None
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            backend_jwt = auth_header[7:]  # Remove "Bearer " prefix
+            user_id = extract_user_id_from_backend_jwt(backend_jwt)
+
+            # Get tenant_id for this specific user (should already be cached)
+            tenant_id = get_cached_tenant_id(user_id)
 
         if tenant_id:
             request.headers["X-TB-Tenant-ID"] = tenant_id

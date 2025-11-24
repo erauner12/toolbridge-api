@@ -80,7 +80,7 @@ async def ensure_tenant_resolved(client: httpx.AsyncClient) -> str:
         id_token = mcp_token.token
 
         # Exchange for backend JWT to get user ID
-        backend_jwt = await exchange_for_backend_jwt(id_token, client)
+        backend_jwt = await exchange_for_backend_jwt(client)
         user_id = extract_user_id_from_backend_jwt(backend_jwt)
 
         # Check per-user cache first
