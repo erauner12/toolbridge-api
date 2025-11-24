@@ -417,8 +417,8 @@ func Middleware(db *pgxpool.Pool, cfg JWTCfg) func(http.Handler) http.Handler {
 			// Add user ID to request context
 			ctx := context.WithValue(r.Context(), CtxUserID, userID)
 
-			// Extract tenant from JWT claims if configured and not already set by HMAC middleware
-			// Precedence: HMAC tenant headers (if present) > JWT tenant claim > no tenant
+			// Extract tenant from JWT claims if configured and not already set by header middleware
+			// Precedence: X-TB-Tenant-ID header (if present) > JWT tenant claim > no tenant
 			//
 			// TENANT IDENTITY CONTRACT:
 			// The claim value (e.g., cfg.TenantClaim = "organization_id") contains the IdP-level
@@ -436,10 +436,12 @@ func Middleware(db *pgxpool.Pool, cfg JWTCfg) func(http.Handler) http.Handler {
 						log.Debug().Str("tenant_id", tenantID).Str("claim", cfg.TenantClaim).Msg("tenant derived from JWT claim")
 					}
 				} else {
-					// Tenant claim configured but not found in JWT - log for debugging misconfiguration
-					log.Debug().
+					// Tenant claim not found in JWT - this is expected when using header-based tenant resolution
+					// (X-TB-Tenant-ID header will be processed by SimpleTenantHeaderMiddleware)
+					// Only log at trace level to avoid confusion
+					log.Trace().
 						Str("claim", cfg.TenantClaim).
-						Msg("tenant claim not found in JWT (claim configured but missing from token)")
+						Msg("tenant claim not found in JWT (expected when using X-TB-Tenant-ID header)")
 				}
 			}
 
