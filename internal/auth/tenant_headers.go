@@ -244,6 +244,15 @@ func validateTenantAuthorization(ctx context.Context, subject, tenantID string, 
 	}
 
 	// B2B validation: Call WorkOS API to verify organization membership
+	// Guard against nil client (e.g., WORKOS_API_KEY not set in single-tenant deployments)
+	if client == nil {
+		log.Warn().
+			Str("subject", subject).
+			Str("tenant_id", tenantID).
+			Msg("Cannot validate B2B tenant authorization: WorkOS client not configured (WORKOS_API_KEY missing?)")
+		return false
+	}
+
 	memberships, err := client.ListOrganizationMemberships(ctx, usermanagement.ListOrganizationMembershipsOpts{
 		UserID: subject, // WorkOS API expects OIDC sub (IdP user ID), not database ID
 		Limit:  10,
