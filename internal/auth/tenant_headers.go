@@ -245,35 +245,55 @@ func validateTenantAuthorization(ctx context.Context, subject, tenantID string, 
 	}
 
 	// B2B validation: Call WorkOS API to verify organization membership
-	memberships, err := client.ListOrganizationMemberships(ctx, usermanagement.ListOrganizationMembershipsOpts{
-		UserID: subject, // WorkOS API expects OIDC sub (IdP user ID), not database ID
-		Limit:  10,
-	})
-	if err != nil {
-		log.Error().
-			Err(err).
-			Str("subject", subject).
-			Str("tenant_id", tenantID).
-			Msg("Failed to validate tenant authorization via WorkOS API")
-		return false
-	}
+	// Paginate through all memberships to handle users with many orgs
+	var allMemberships []usermanagement.OrganizationMembership
+	var cursor string
 
-	// Check if user is member of requested organization (B2B path)
-	for _, membership := range memberships.Data {
-		if membership.OrganizationID == tenantID {
-			log.Info().
+	for {
+		opts := usermanagement.ListOrganizationMembershipsOpts{
+			UserID: subject, // WorkOS API expects OIDC sub (IdP user ID), not database ID
+			Limit:  100,     // Fetch in larger batches for efficiency
+		}
+		if cursor != "" {
+			opts.After = cursor
+		}
+
+		memberships, err := client.ListOrganizationMemberships(ctx, opts)
+		if err != nil {
+			log.Error().
+				Err(err).
 				Str("subject", subject).
 				Str("tenant_id", tenantID).
-				Str("organization_name", membership.OrganizationName).
-				Msg("Tenant authorization validated via WorkOS API")
-			cache.Set(subject, tenantID)
-			return true
+				Msg("Failed to validate tenant authorization via WorkOS API")
+			return false
 		}
+
+		// Check if user is member of requested organization (B2B path)
+		// Check as we paginate for early exit on match
+		for _, membership := range memberships.Data {
+			if membership.OrganizationID == tenantID {
+				log.Info().
+					Str("subject", subject).
+					Str("tenant_id", tenantID).
+					Str("organization_name", membership.OrganizationName).
+					Msg("Tenant authorization validated via WorkOS API")
+				cache.Set(subject, tenantID)
+				return true
+			}
+		}
+
+		allMemberships = append(allMemberships, memberships.Data...)
+
+		// Check if there are more pages (After is empty when no more pages)
+		if memberships.ListMetadata.After == "" {
+			break
+		}
+		cursor = memberships.ListMetadata.After
 	}
 
 	// B2C fallback: Allow default tenant ONLY if user has NO organization memberships
 	// This prevents B2B users from spoofing the default tenant header to bypass org validation
-	if tenantID == defaultTenantID && len(memberships.Data) == 0 {
+	if tenantID == defaultTenantID && len(allMemberships) == 0 {
 		log.Debug().
 			Str("subject", subject).
 			Str("tenant_id", tenantID).
@@ -283,16 +303,17 @@ func validateTenantAuthorization(ctx context.Context, subject, tenantID string, 
 	}
 
 	// Rejection: User either requested wrong org, or requested default tenant while having org memberships
-	if tenantID == defaultTenantID && len(memberships.Data) > 0 {
+	if tenantID == defaultTenantID && len(allMemberships) > 0 {
 		log.Warn().
 			Str("subject", subject).
 			Str("tenant_id", tenantID).
-			Int("membership_count", len(memberships.Data)).
+			Int("membership_count", len(allMemberships)).
 			Msg("B2B user attempted to access default tenant - must use organization tenant")
 	} else {
 		log.Warn().
 			Str("subject", subject).
 			Str("tenant_id", tenantID).
+			Int("membership_count", len(allMemberships)).
 			Msg("User not authorized for requested tenant (no matching organization membership)")
 	}
 	return false

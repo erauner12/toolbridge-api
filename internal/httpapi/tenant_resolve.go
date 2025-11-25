@@ -71,29 +71,48 @@ func (s *Server) ResolveTenant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Call WorkOS API to get user's organization memberships
+	// Paginate through all memberships to handle users with many orgs
 	log.Info().
 		Str("user_id", sub).
 		Str("correlation_id", GetCorrelationID(ctx)).
 		Msg("Resolving tenant via WorkOS API")
 
-	memberships, err := s.WorkOSClient.ListOrganizationMemberships(ctx, usermanagement.ListOrganizationMembershipsOpts{
-		UserID: sub,
-		Limit:  10, // Handle up to 10 organizations
-	})
-	if err != nil {
-		log.Error().
-			Err(err).
-			Str("user_id", sub).
-			Str("correlation_id", GetCorrelationID(ctx)).
-			Msg("Failed to resolve tenant from WorkOS")
-		writeError(w, r, http.StatusInternalServerError, "Failed to resolve tenant")
-		return
+	var allMemberships []usermanagement.OrganizationMembership
+	var cursor string
+
+	for {
+		opts := usermanagement.ListOrganizationMembershipsOpts{
+			UserID: sub,
+			Limit:  100, // Fetch in larger batches for efficiency
+		}
+		if cursor != "" {
+			opts.After = cursor
+		}
+
+		memberships, err := s.WorkOSClient.ListOrganizationMemberships(ctx, opts)
+		if err != nil {
+			log.Error().
+				Err(err).
+				Str("user_id", sub).
+				Str("correlation_id", GetCorrelationID(ctx)).
+				Msg("Failed to resolve tenant from WorkOS")
+			writeError(w, r, http.StatusInternalServerError, "Failed to resolve tenant")
+			return
+		}
+
+		allMemberships = append(allMemberships, memberships.Data...)
+
+		// Check if there are more pages (After is empty when no more pages)
+		if memberships.ListMetadata.After == "" {
+			break
+		}
+		cursor = memberships.ListMetadata.After
 	}
 
 	// B2C fallback: if user has no organization memberships, use default tenant
 	// Pattern 3 (Hybrid): B2C users without org memberships get the default tenant,
 	// B2B users with org memberships get their organization ID as tenant
-	if len(memberships.Data) == 0 {
+	if len(allMemberships) == 0 {
 		log.Info().
 			Str("user_id", sub).
 			Str("tenant_id", s.DefaultTenantID).
@@ -109,8 +128,8 @@ func (s *Server) ResolveTenant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Single organization - return directly
-	if len(memberships.Data) == 1 {
-		org := memberships.Data[0]
+	if len(allMemberships) == 1 {
+		org := allMemberships[0]
 		log.Info().
 			Str("user_id", sub).
 			Str("tenant_id", org.OrganizationID).
@@ -127,9 +146,9 @@ func (s *Server) ResolveTenant(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Multiple organizations - return all and let client choose
-	organizations := make([]OrgInfo, len(memberships.Data))
-	orgNames := make([]string, len(memberships.Data))
-	for i, membership := range memberships.Data {
+	organizations := make([]OrgInfo, len(allMemberships))
+	orgNames := make([]string, len(allMemberships))
+	for i, membership := range allMemberships {
 		organizations[i] = OrgInfo{
 			ID:   membership.OrganizationID,
 			Name: membership.OrganizationName,
@@ -139,7 +158,7 @@ func (s *Server) ResolveTenant(w http.ResponseWriter, r *http.Request) {
 
 	log.Info().
 		Str("user_id", sub).
-		Int("organization_count", len(memberships.Data)).
+		Int("organization_count", len(allMemberships)).
 		Str("organizations", strings.Join(orgNames, ", ")).
 		Str("correlation_id", GetCorrelationID(ctx)).
 		Msg("User belongs to multiple organizations")
