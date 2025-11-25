@@ -367,8 +367,10 @@ func (s *NoteService) ApplyNoteMutation(ctx context.Context, userID string, payl
 		return nil, &MutationError{Message: ack.Error}
 	}
 
-	expectedUpdatedAt := syncx.RFC3339(timestampMs)
-	upsertApplied := ack.UpdatedAt == expectedUpdatedAt
+	// Detect whether our mutation actually advanced the row.
+	// Use version delta instead of timestamp equality to avoid clobbering when
+	// the LWW guard rejected an equal-timestamp update.
+	upsertApplied := isNew || ack.Version > existingVersion
 	var deletedAtFromDB *string
 
 	// Normalize sync metadata in payload for client compatibility
@@ -413,8 +415,8 @@ func (s *NoteService) ApplyNoteMutation(ctx context.Context, userID string, payl
 	} else {
 		logger.Warn().
 			Str("uid", noteUID.String()).
-			Str("attemptedUpdatedAt", expectedUpdatedAt).
-			Str("serverUpdatedAt", ack.UpdatedAt).
+			Int("existingVersion", existingVersion).
+			Int("ackVersion", ack.Version).
 			Msg("skipping payload normalization because a newer write already exists")
 		// Refresh payload for response to reflect the current authoritative state
 		var currentPayload map[string]any
