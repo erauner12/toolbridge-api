@@ -233,15 +233,26 @@ func validateTenantAuthorization(ctx context.Context, subject, tenantID string, 
 	}
 
 	// Single-tenant/smoke-test mode: WorkOS client not configured
-	// Allow any tenant since we can't validate memberships anyway.
-	// SECURITY: Production deployments MUST set WORKOS_API_KEY for proper B2B validation.
+	// SECURITY FIX: Fail-closed - only allow access to the default tenant when WorkOS is not configured.
+	// This prevents arbitrary tenant access when WORKOS_API_KEY is missing/misconfigured.
+	// Production multi-tenant deployments MUST set WORKOS_API_KEY for proper B2B validation.
 	if client == nil {
-		log.Warn().
+		// Only allow access to the default tenant (B2C mode)
+		if defaultTenantID != "" && tenantID == defaultTenantID {
+			log.Warn().
+				Str("subject", subject).
+				Str("tenant_id", tenantID).
+				Msg("WorkOS client not configured - allowing default tenant access only (single-tenant/B2C mode)")
+			cache.Set(subject, tenantID)
+			return true
+		}
+		// Reject all other tenant access attempts when WorkOS is not configured
+		log.Error().
 			Str("subject", subject).
 			Str("tenant_id", tenantID).
-			Msg("WorkOS client not configured - allowing tenant access without B2B validation (single-tenant/smoke-test mode)")
-		cache.Set(subject, tenantID)
-		return true
+			Str("default_tenant_id", defaultTenantID).
+			Msg("WorkOS client not configured and requested tenant does not match default - denying access (fail-closed)")
+		return false
 	}
 
 	// B2B validation: Call WorkOS API to verify organization membership

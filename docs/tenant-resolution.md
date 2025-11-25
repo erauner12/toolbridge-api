@@ -282,6 +282,25 @@ This endpoint resolves **which tenant** a user belongs to. It does NOT authorize
 - Tenant header validation (for MCP deployments)
 - Row-level security in database queries
 
+### Fail-Closed Security Model
+
+The tenant authorization middleware uses a **fail-closed** security model:
+
+**When `WORKOS_API_KEY` is configured (production multi-tenant mode):**
+- B2C users (no org memberships) → Access only the default tenant (`DEFAULT_TENANT_ID`)
+- B2B users → Access only organizations they belong to (validated via WorkOS API)
+- All other tenant access attempts are **denied**
+
+**When `WORKOS_API_KEY` is NOT configured (single-tenant/smoke-test mode):**
+- Users can **only** access the default tenant (`DEFAULT_TENANT_ID`)
+- All other tenant access attempts are **denied**
+- This prevents misconfigured deployments from allowing arbitrary cross-tenant access
+
+This fail-closed design ensures that:
+- A missing or misconfigured `WORKOS_API_KEY` does NOT grant unrestricted access
+- Production deployments MUST set `WORKOS_API_KEY` for proper B2B organization validation
+- Single-tenant deployments are restricted to the configured default tenant
+
 ## Multi-Organization Support
 
 When a user belongs to multiple organizations:
