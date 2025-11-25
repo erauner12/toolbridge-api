@@ -367,21 +367,42 @@ func (s *NoteService) ApplyNoteMutation(ctx context.Context, userID string, payl
 		return nil, &MutationError{Message: ack.Error}
 	}
 
-	// Fix payload's sync.version to match the authoritative server version
-	// This ensures delta-sync clients see the correct version in the payload
-	_, err = tx.Exec(ctx, `
-		UPDATE note
-		SET payload_json = jsonb_set(payload_json, '{sync,version}', to_jsonb($1::int))
-		WHERE owner_id = $2 AND uid = $3
-	`, ack.Version, userID, noteUID)
+	// Normalize sync metadata in payload for client compatibility
+	// Flutter clients expect flat sync fields (version, isDirty, isDeleted, remoteUpdatedAt, updateTime)
+	// to match the nested sync block that BuildServerMutation created.
+	
+	// Update nested sync.version to match authoritative server version
+	if syncBlock, ok := mutatedPayload["sync"].(map[string]any); ok {
+		syncBlock["version"] = ack.Version
+	}
+
+	// Normalize flat sync fields to match nested sync and server state
+	mutatedPayload["version"] = ack.Version
+	mutatedPayload["isDirty"] = 0 // REST mutations are already synced
+	if opts.SetDeleted {
+		mutatedPayload["isDeleted"] = 1
+	} else {
+		mutatedPayload["isDeleted"] = 0
+	}
+	mutatedPayload["remoteUpdatedAt"] = ack.UpdatedAt
+	mutatedPayload["updateTime"] = ack.UpdatedAt
+	mutatedPayload["lastSyncedAt"] = ack.UpdatedAt
+
+	// Persist normalized payload to database
+	payloadJSON, err := json.Marshal(mutatedPayload)
 	if err != nil {
-		logger.Error().Err(err).Msg("failed to update payload version")
+		logger.Error().Err(err).Msg("failed to marshal normalized payload")
 		return nil, err
 	}
 
-	// Also update the in-memory payload for the response
-	if syncBlock, ok := mutatedPayload["sync"].(map[string]any); ok {
-		syncBlock["version"] = ack.Version
+	_, err = tx.Exec(ctx, `
+		UPDATE note
+		SET payload_json = $1::jsonb
+		WHERE owner_id = $2 AND uid = $3
+	`, payloadJSON, userID, noteUID)
+	if err != nil {
+		logger.Error().Err(err).Msg("failed to update normalized payload")
+		return nil, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {

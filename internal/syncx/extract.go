@@ -214,8 +214,10 @@ func BuildServerMutation(payload map[string]any, timestampMs int64, setDeleted b
 		payload["uid"] = uuid.New().String()
 	}
 
-	// Set server timestamp
+	// Set server timestamps
+	// updatedTs is for server tracking; updateTime is for client UI sorting/display
 	payload["updatedTs"] = RFC3339(timestampMs)
+	payload["updateTime"] = RFC3339(timestampMs)
 
 	// Build sync block
 	sync := map[string]any{
