@@ -1,5 +1,9 @@
 # Testing Plan: OIDC-Derived Tenant Support
 
+> **Note:** Some environment variables in this document (like `TENANT_HEADER_SECRET`) are from the old architecture.
+> The current implementation uses WorkOS API-based tenant authorization instead of HMAC signing.
+> See `docs/tenant-resolution.md` for current architecture.
+
 **PRs Under Test:**
 - Go Backend: erauner12/toolbridge-api#55
 - Flutter Client: erauner/ToolBridge#190
