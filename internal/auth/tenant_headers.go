@@ -232,26 +232,10 @@ func validateTenantAuthorization(ctx context.Context, subject, tenantID string, 
 		return true
 	}
 
-	// B2C fallback: if tenant is default tenant, allow access
-	// This handles B2C users who don't have organization memberships
-	if tenantID == defaultTenantID {
-		log.Debug().
-			Str("subject", subject).
-			Str("tenant_id", tenantID).
-			Msg("B2C user accessing default tenant")
-		cache.Set(subject, tenantID)
-		return true
-	}
-
-	// B2B validation: Call WorkOS API to verify organization membership
-	// Guard against nil client (e.g., WORKOS_API_KEY not set in single-tenant deployments)
+	// Single-tenant/smoke-test mode: WorkOS client not configured
+	// Allow any tenant since we can't validate memberships anyway.
+	// SECURITY: Production deployments MUST set WORKOS_API_KEY for proper B2B validation.
 	if client == nil {
-		// In single-tenant/smoke-test mode without WorkOS, we can't validate B2B memberships.
-		// Allow the request through since:
-		// 1. User is already authenticated via JWT
-		// 2. We have no way to verify organization membership without WorkOS
-		// 3. This enables single-tenant deployments and smoke testing
-		// 4. In production, WORKOS_API_KEY should be set for proper B2B validation
 		log.Warn().
 			Str("subject", subject).
 			Str("tenant_id", tenantID).
@@ -260,6 +244,7 @@ func validateTenantAuthorization(ctx context.Context, subject, tenantID string, 
 		return true
 	}
 
+	// B2B validation: Call WorkOS API to verify organization membership
 	memberships, err := client.ListOrganizationMemberships(ctx, usermanagement.ListOrganizationMembershipsOpts{
 		UserID: subject, // WorkOS API expects OIDC sub (IdP user ID), not database ID
 		Limit:  10,
@@ -273,7 +258,7 @@ func validateTenantAuthorization(ctx context.Context, subject, tenantID string, 
 		return false
 	}
 
-	// Check if user is member of requested organization
+	// Check if user is member of requested organization (B2B path)
 	for _, membership := range memberships.Data {
 		if membership.OrganizationID == tenantID {
 			log.Info().
@@ -286,10 +271,30 @@ func validateTenantAuthorization(ctx context.Context, subject, tenantID string, 
 		}
 	}
 
-	log.Warn().
-		Str("subject", subject).
-		Str("tenant_id", tenantID).
-		Msg("User not authorized for requested tenant (no matching organization membership)")
+	// B2C fallback: Allow default tenant ONLY if user has NO organization memberships
+	// This prevents B2B users from spoofing the default tenant header to bypass org validation
+	if tenantID == defaultTenantID && len(memberships.Data) == 0 {
+		log.Debug().
+			Str("subject", subject).
+			Str("tenant_id", tenantID).
+			Msg("B2C user accessing default tenant (no organization memberships)")
+		cache.Set(subject, tenantID)
+		return true
+	}
+
+	// Rejection: User either requested wrong org, or requested default tenant while having org memberships
+	if tenantID == defaultTenantID && len(memberships.Data) > 0 {
+		log.Warn().
+			Str("subject", subject).
+			Str("tenant_id", tenantID).
+			Int("membership_count", len(memberships.Data)).
+			Msg("B2B user attempted to access default tenant - must use organization tenant")
+	} else {
+		log.Warn().
+			Str("subject", subject).
+			Str("tenant_id", tenantID).
+			Msg("User not authorized for requested tenant (no matching organization membership)")
+	}
 	return false
 }
 
