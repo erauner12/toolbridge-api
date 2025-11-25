@@ -135,8 +135,9 @@ async def get_backend_auth_header(client: httpx.AsyncClient) -> str:
     """
     Get Authorization header for backend API calls.
 
-    First checks the JWT cache (populated by ensure_tenant_resolved).
-    Falls back to exchanging MCP OAuth token if not cached.
+    First checks the JWT cache (populated by ensure_tenant_resolved) for the
+    CURRENT user (identified via MCP OAuth context). Falls back to exchanging
+    MCP OAuth token if not cached.
 
     Args:
         client: httpx client for token exchange requests
@@ -150,16 +151,21 @@ async def get_backend_auth_header(client: httpx.AsyncClient) -> str:
     from toolbridge_mcp.auth import TokenExchangeError
 
     try:
-        # Try to get cached JWT first (avoids double token exchange)
+        # Get current user's identity from MCP OAuth context
+        # This ensures we return the correct user's JWT in multi-user scenarios
+        mcp_token = get_access_token()
+        current_user_id = mcp_token.claims.get("sub")
+
+        # Try to get cached JWT for THIS specific user (avoids double token exchange)
         # ensure_tenant_resolved caches the JWT when it exchanges for user_id
-        for user_id, cached_jwt in _jwt_cache.items():
-            # Return the first cached JWT (single-user per request context)
-            logger.debug(f"Using cached backend JWT for user {user_id}")
+        if current_user_id and current_user_id in _jwt_cache:
+            cached_jwt = _jwt_cache[current_user_id]
+            logger.debug(f"Using cached backend JWT for user {current_user_id}")
             return f"Bearer {cached_jwt}"
 
         # Fall back to token exchange if not cached
         # (shouldn't happen if ensure_tenant_resolved was called first)
-        logger.debug("Exchanging MCP OAuth token for backend JWT (cache miss)")
+        logger.debug(f"Exchanging MCP OAuth token for backend JWT (cache miss for user {current_user_id})")
         backend_jwt = await exchange_for_backend_jwt(client)
         return f"Bearer {backend_jwt}"
     except TokenExchangeError as e:
