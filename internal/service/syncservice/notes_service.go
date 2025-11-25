@@ -367,42 +367,71 @@ func (s *NoteService) ApplyNoteMutation(ctx context.Context, userID string, payl
 		return nil, &MutationError{Message: ack.Error}
 	}
 
+	expectedUpdatedAt := syncx.RFC3339(timestampMs)
+	upsertApplied := ack.UpdatedAt == expectedUpdatedAt
+	var deletedAtFromDB *string
+
 	// Normalize sync metadata in payload for client compatibility
 	// Flutter clients expect flat sync fields (version, isDirty, isDeleted, remoteUpdatedAt, updateTime)
 	// to match the nested sync block that BuildServerMutation created.
-	
-	// Update nested sync.version to match authoritative server version
-	if syncBlock, ok := mutatedPayload["sync"].(map[string]any); ok {
-		syncBlock["version"] = ack.Version
-	}
 
-	// Normalize flat sync fields to match nested sync and server state
-	mutatedPayload["version"] = ack.Version
-	mutatedPayload["isDirty"] = 0 // REST mutations are already synced
-	if opts.SetDeleted {
-		mutatedPayload["isDeleted"] = 1
+	// Only write the normalized payload when our upsert actually won (timestamps matched)
+	// Otherwise we risk overwriting a newer concurrent write with stale content.
+	if upsertApplied {
+		// Update nested sync.version to match authoritative server version
+		if syncBlock, ok := mutatedPayload["sync"].(map[string]any); ok {
+			syncBlock["version"] = ack.Version
+		}
+
+		// Normalize flat sync fields to match nested sync and server state
+		mutatedPayload["version"] = ack.Version
+		mutatedPayload["isDirty"] = 0 // REST mutations are already synced
+		if opts.SetDeleted {
+			mutatedPayload["isDeleted"] = 1
+		} else {
+			mutatedPayload["isDeleted"] = 0
+		}
+		mutatedPayload["remoteUpdatedAt"] = ack.UpdatedAt
+		mutatedPayload["updateTime"] = ack.UpdatedAt
+		mutatedPayload["lastSyncedAt"] = ack.UpdatedAt
+
+		// Persist normalized payload to database
+		payloadJSON, err := json.Marshal(mutatedPayload)
+		if err != nil {
+			logger.Error().Err(err).Msg("failed to marshal normalized payload")
+			return nil, err
+		}
+
+		if _, err = tx.Exec(ctx, `
+			UPDATE note
+			SET payload_json = $1::jsonb
+			WHERE owner_id = $2 AND uid = $3
+		`, payloadJSON, userID, noteUID); err != nil {
+			logger.Error().Err(err).Msg("failed to update normalized payload")
+			return nil, err
+		}
 	} else {
-		mutatedPayload["isDeleted"] = 0
-	}
-	mutatedPayload["remoteUpdatedAt"] = ack.UpdatedAt
-	mutatedPayload["updateTime"] = ack.UpdatedAt
-	mutatedPayload["lastSyncedAt"] = ack.UpdatedAt
-
-	// Persist normalized payload to database
-	payloadJSON, err := json.Marshal(mutatedPayload)
-	if err != nil {
-		logger.Error().Err(err).Msg("failed to marshal normalized payload")
-		return nil, err
-	}
-
-	_, err = tx.Exec(ctx, `
-		UPDATE note
-		SET payload_json = $1::jsonb
-		WHERE owner_id = $2 AND uid = $3
-	`, payloadJSON, userID, noteUID)
-	if err != nil {
-		logger.Error().Err(err).Msg("failed to update normalized payload")
-		return nil, err
+		logger.Warn().
+			Str("uid", noteUID.String()).
+			Str("attemptedUpdatedAt", expectedUpdatedAt).
+			Str("serverUpdatedAt", ack.UpdatedAt).
+			Msg("skipping payload normalization because a newer write already exists")
+		// Refresh payload for response to reflect the current authoritative state
+		var currentPayload map[string]any
+		var deletedAtMs *int64
+		if err := tx.QueryRow(ctx, `
+			SELECT payload_json, deleted_at_ms
+			FROM note
+			WHERE owner_id = $1 AND uid = $2
+		`, userID, noteUID).Scan(&currentPayload, &deletedAtMs); err != nil {
+			logger.Error().Err(err).Msg("failed to reload payload after concurrent write")
+			return nil, err
+		}
+		mutatedPayload = currentPayload
+		if deletedAtMs != nil {
+			ts := syncx.RFC3339(*deletedAtMs)
+			deletedAtFromDB = &ts
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -412,9 +441,21 @@ func (s *NoteService) ApplyNoteMutation(ctx context.Context, userID string, payl
 
 	// Return item
 	var deletedAt *string
-	if opts.SetDeleted {
+	if upsertApplied && opts.SetDeleted {
 		ts := syncx.RFC3339(timestampMs)
 		deletedAt = &ts
+	}
+
+	if !upsertApplied {
+		if deletedAtFromDB != nil {
+			deletedAt = deletedAtFromDB
+		} else if syncBlock, ok := mutatedPayload["sync"].(map[string]any); ok {
+			if isDeleted, ok := syncBlock["isDeleted"].(bool); ok && isDeleted {
+				// Best-effort: use ack.UpdatedAt when no explicit deletedAt was provided
+				ts := ack.UpdatedAt
+				deletedAt = &ts
+			}
+		}
 	}
 
 	return &RESTItem{
