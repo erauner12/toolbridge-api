@@ -1,3 +1,5 @@
+//go:build ignore
+
 package main
 
 // This test proves that standard OIDC tokens from WorkOS AuthKit do NOT contain
