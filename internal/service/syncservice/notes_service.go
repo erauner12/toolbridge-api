@@ -17,6 +17,7 @@ type PushAck struct {
 	Version   int    `json:"version"`
 	UpdatedAt string `json:"updatedAt"`
 	Error     string `json:"error,omitempty"`
+	Applied   bool   `json:"applied,omitempty"`
 }
 
 // PullResponse represents the response from a pull operation
@@ -63,7 +64,7 @@ func (s *NoteService) PushNoteItem(ctx context.Context, tx pgx.Tx, userID string
 	// Insert or update with LWW conflict resolution
 	// Key invariant: WHERE clause uses strict > (not >=) to make duplicate pushes idempotent
 	// If same timestamp arrives twice, version doesn't increment
-	_, err = tx.Exec(ctx, `
+	tag, err := tx.Exec(ctx, `
 		INSERT INTO note (uid, owner_id, updated_at_ms, deleted_at_ms, version, payload_json)
 		VALUES ($1, $2, $3, $4, GREATEST($5, 1), $6)
 		ON CONFLICT (owner_id, uid) DO UPDATE SET
@@ -78,6 +79,11 @@ func (s *NoteService) PushNoteItem(ctx context.Context, tx pgx.Tx, userID string
 			END
 		WHERE EXCLUDED.updated_at_ms > note.updated_at_ms
 	`, ext.UID, userID, ext.UpdatedAtMs, ext.DeletedAtMs, ext.Version, payloadJSON)
+
+	applied := false
+	if err == nil {
+		applied = tag.RowsAffected() > 0
+	}
 
 	if err != nil {
 		logger.Error().Err(err).Str("uid", ext.UID.String()).Msg("failed to upsert note")
@@ -109,6 +115,7 @@ func (s *NoteService) PushNoteItem(ctx context.Context, tx pgx.Tx, userID string
 		UID:       ext.UID.String(),
 		Version:   serverVersion,
 		UpdatedAt: syncx.RFC3339(serverMs),
+		Applied:   applied,
 	}
 }
 
@@ -367,21 +374,68 @@ func (s *NoteService) ApplyNoteMutation(ctx context.Context, userID string, payl
 		return nil, &MutationError{Message: ack.Error}
 	}
 
-	// Fix payload's sync.version to match the authoritative server version
-	// This ensures delta-sync clients see the correct version in the payload
-	_, err = tx.Exec(ctx, `
-		UPDATE note
-		SET payload_json = jsonb_set(payload_json, '{sync,version}', to_jsonb($1::int))
-		WHERE owner_id = $2 AND uid = $3
-	`, ack.Version, userID, noteUID)
-	if err != nil {
-		logger.Error().Err(err).Msg("failed to update payload version")
-		return nil, err
-	}
+	// Detect whether our mutation actually advanced the row.
+	// Use the Applied flag from PushNoteItem (rows affected) to avoid clobbering when
+	// the LWW guard rejected an equal-timestamp or concurrent update.
+	upsertApplied := ack.Applied
+	var deletedAtMs *int64 // Declared here for use in !upsertApplied path later
 
-	// Also update the in-memory payload for the response
-	if syncBlock, ok := mutatedPayload["sync"].(map[string]any); ok {
-		syncBlock["version"] = ack.Version
+	// Normalize sync metadata in payload for client compatibility
+	// Flutter clients expect flat sync fields (version, isDirty, isDeleted, remoteUpdatedAt, updateTime)
+	// to match the nested sync block that BuildServerMutation created.
+
+	// Only write the normalized payload when our upsert actually won (timestamps matched)
+	// Otherwise we risk overwriting a newer concurrent write with stale content.
+	if upsertApplied {
+		// Update nested sync.version to match authoritative server version
+		if syncBlock, ok := mutatedPayload["sync"].(map[string]any); ok {
+			syncBlock["version"] = ack.Version
+		}
+
+		// Normalize flat sync fields to match nested sync and server state
+		mutatedPayload["version"] = ack.Version
+		mutatedPayload["isDirty"] = 0 // REST mutations are already synced (use 0/1 for client compatibility)
+		if opts.SetDeleted {
+			mutatedPayload["isDeleted"] = 1
+		} else {
+			mutatedPayload["isDeleted"] = 0
+		}
+		mutatedPayload["remoteUpdatedAt"] = ack.UpdatedAt
+		mutatedPayload["updateTime"] = ack.UpdatedAt
+		mutatedPayload["lastSyncedAt"] = ack.UpdatedAt
+
+		// Persist normalized payload to database
+		payloadJSON, err := json.Marshal(mutatedPayload)
+		if err != nil {
+			logger.Error().Err(err).Msg("failed to marshal normalized payload")
+			return nil, err
+		}
+
+		if _, err = tx.Exec(ctx, `
+			UPDATE note
+			SET payload_json = $1::jsonb
+			WHERE owner_id = $2 AND uid = $3
+		`, payloadJSON, userID, noteUID); err != nil {
+			logger.Error().Err(err).Msg("failed to update normalized payload")
+			return nil, err
+		}
+	} else {
+		logger.Warn().
+			Str("uid", noteUID.String()).
+			Int("existingVersion", existingVersion).
+			Int("ackVersion", ack.Version).
+			Msg("skipping payload normalization because a newer write already exists")
+		// Refresh payload for response to reflect the current authoritative state
+		var currentPayload map[string]any
+		if err := tx.QueryRow(ctx, `
+			SELECT payload_json, deleted_at_ms
+			FROM note
+			WHERE owner_id = $1 AND uid = $2
+		`, userID, noteUID).Scan(&currentPayload, &deletedAtMs); err != nil {
+			logger.Error().Err(err).Msg("failed to reload payload after concurrent write")
+			return nil, err
+		}
+		mutatedPayload = currentPayload
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -389,11 +443,26 @@ func (s *NoteService) ApplyNoteMutation(ctx context.Context, userID string, payl
 		return nil, err
 	}
 
-	// Return item
+	// Determine deletedAt for response based on whether our mutation applied
 	var deletedAt *string
-	if opts.SetDeleted {
-		ts := syncx.RFC3339(timestampMs)
-		deletedAt = &ts
+	if upsertApplied {
+		// Our mutation won - use our SetDeleted flag and timestamp
+		if opts.SetDeleted {
+			ts := syncx.RFC3339(timestampMs)
+			deletedAt = &ts
+		}
+	} else {
+		// Concurrent write won - extract deletedAt from the current DB state
+		if deletedAtMs != nil {
+			ts := syncx.RFC3339(*deletedAtMs)
+			deletedAt = &ts
+		} else if syncBlock, ok := mutatedPayload["sync"].(map[string]any); ok {
+			if isDeleted, ok := syncBlock["isDeleted"].(bool); ok && isDeleted {
+				// Best-effort: use ack.UpdatedAt when no explicit deletedAt was provided
+				ts := ack.UpdatedAt
+				deletedAt = &ts
+			}
+		}
 	}
 
 	return &RESTItem{
