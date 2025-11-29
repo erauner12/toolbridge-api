@@ -399,20 +399,26 @@ func (s *TaskListService) OrphanTasksInListTx(ctx context.Context, tx pgx.Tx, us
 
 	// Update tasks that belong to this list:
 	// 1. Remove taskListUid from payload
-	// 2. Update sync.version to match new version
-	// 3. Update updatedTs and updateTime for client sync
+	// 2. Update sync.version and sync.updatedAt to match new version/timestamp
+	// 3. Update updatedTs, updateTime, and updatedAt for client sync
 	// 4. Bump updated_at_ms and version columns
 	query := `
 		UPDATE task
 		SET payload_json = jsonb_set(
 				jsonb_set(
 					jsonb_set(
-						payload_json - 'taskListUid',
-						'{sync,version}', to_jsonb(version + 1)
+						jsonb_set(
+							jsonb_set(
+								payload_json - 'taskListUid',
+								'{sync,version}', to_jsonb(version + 1)
+							),
+							'{sync,updatedAt}', to_jsonb($3::text)
+						),
+						'{updatedTs}', to_jsonb($3::text)
 					),
-					'{updatedTs}', to_jsonb($3::text)
+					'{updateTime}', to_jsonb($3::text)
 				),
-				'{updateTime}', to_jsonb($3::text)
+				'{updatedAt}', to_jsonb($3::text)
 			),
 		    updated_at_ms = $4,
 		    version = version + 1
