@@ -7,6 +7,7 @@ import (
 	"github.com/erauner12/toolbridge-api/internal/syncx"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 )
@@ -272,14 +273,30 @@ func (s *TaskListService) ListTaskLists(ctx context.Context, userID string, curs
 
 // ApplyTaskListMutation creates or updates a task list via REST
 func (s *TaskListService) ApplyTaskListMutation(ctx context.Context, userID string, payload map[string]any, opts MutationOpts) (*RESTItem, error) {
-	logger := log.With().Logger()
-
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
-		logger.Error().Err(err).Msg("failed to begin transaction")
+		log.Error().Err(err).Msg("failed to begin transaction")
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
+
+	item, err := s.ApplyTaskListMutationTx(ctx, tx, userID, payload, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		log.Error().Err(err).Msg("failed to commit mutation")
+		return nil, err
+	}
+
+	return item, nil
+}
+
+// ApplyTaskListMutationTx creates or updates a task list within an existing transaction
+// The caller is responsible for committing or rolling back the transaction
+func (s *TaskListService) ApplyTaskListMutationTx(ctx context.Context, tx pgx.Tx, userID string, payload map[string]any, opts MutationOpts) (*RESTItem, error) {
+	logger := log.With().Logger()
 
 	// Extract UID or generate new one
 	var taskListUID uuid.UUID
@@ -294,7 +311,7 @@ func (s *TaskListService) ApplyTaskListMutation(ctx context.Context, userID stri
 	// Fetch existing to determine timestamp
 	var existingMs int64
 	var existingVersion int
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		SELECT updated_at_ms, version
 		FROM task_list
 		WHERE owner_id = $1 AND uid = $2
@@ -351,11 +368,6 @@ func (s *TaskListService) ApplyTaskListMutation(ctx context.Context, userID stri
 		syncBlock["version"] = ack.Version
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		logger.Error().Err(err).Msg("failed to commit mutation")
-		return nil, err
-	}
-
 	var deletedAt *string
 	if opts.SetDeleted {
 		ts := syncx.RFC3339(timestampMs)
@@ -374,24 +386,93 @@ func (s *TaskListService) ApplyTaskListMutation(ctx context.Context, userID stri
 // OrphanTasksInList sets taskListUid to null for all tasks in a given list
 // This is called when deleting a task list to preserve tasks as standalone
 func (s *TaskListService) OrphanTasksInList(ctx context.Context, userID string, taskListUID uuid.UUID) (int64, error) {
+	return s.OrphanTasksInListTx(ctx, nil, userID, taskListUID)
+}
+
+// OrphanTasksInListTx sets taskListUid to null for all tasks in a given list within a transaction
+// If tx is nil, uses the pool directly (non-transactional)
+func (s *TaskListService) OrphanTasksInListTx(ctx context.Context, tx pgx.Tx, userID string, taskListUID uuid.UUID) (int64, error) {
 	logger := log.With().Logger()
 
-	// Update tasks that belong to this list by removing taskListUid from payload
-	// Also bump updated_at_ms to ensure changes sync
-	result, err := s.DB.Exec(ctx, `
+	timestampMs := syncx.NowMs()
+	timestampRFC := syncx.RFC3339(timestampMs)
+
+	// Update tasks that belong to this list:
+	// 1. Remove taskListUid from payload
+	// 2. Update sync.version to match new version
+	// 3. Update updatedTs and updateTime for client sync
+	// 4. Bump updated_at_ms and version columns
+	query := `
 		UPDATE task
-		SET payload_json = payload_json - 'taskListUid',
-		    updated_at_ms = $3,
+		SET payload_json = jsonb_set(
+				jsonb_set(
+					jsonb_set(
+						payload_json - 'taskListUid',
+						'{sync,version}', to_jsonb(version + 1)
+					),
+					'{updatedTs}', to_jsonb($3::text)
+				),
+				'{updateTime}', to_jsonb($3::text)
+			),
+		    updated_at_ms = $4,
 		    version = version + 1
 		WHERE owner_id = $1
 		  AND payload_json->>'taskListUid' = $2
 		  AND deleted_at_ms IS NULL
-	`, userID, taskListUID.String(), syncx.NowMs())
+	`
+
+	var ct pgconn.CommandTag
+	var err error
+	if tx != nil {
+		ct, err = tx.Exec(ctx, query, userID, taskListUID.String(), timestampRFC, timestampMs)
+	} else {
+		ct, err = s.DB.Exec(ctx, query, userID, taskListUID.String(), timestampRFC, timestampMs)
+	}
 
 	if err != nil {
 		logger.Error().Err(err).Str("taskListUid", taskListUID.String()).Msg("failed to orphan tasks")
 		return 0, err
 	}
 
-	return result.RowsAffected(), nil
+	return ct.RowsAffected(), nil
+}
+
+// DeleteTaskListResult contains the result of deleting a task list
+type DeleteTaskListResult struct {
+	Item          *RESTItem
+	OrphanedCount int64
+}
+
+// DeleteTaskListWithOrphan atomically orphans tasks and soft-deletes the task list
+// This ensures both operations succeed or fail together
+func (s *TaskListService) DeleteTaskListWithOrphan(ctx context.Context, userID string, taskListUID uuid.UUID, payload map[string]any) (*DeleteTaskListResult, error) {
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to begin transaction for task list deletion")
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	// Orphan tasks first (within transaction)
+	orphanedCount, err := s.OrphanTasksInListTx(ctx, tx, userID, taskListUID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Soft delete the task list (within same transaction)
+	opts := MutationOpts{SetDeleted: true}
+	item, err := s.ApplyTaskListMutationTx(ctx, tx, userID, payload, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		log.Error().Err(err).Msg("failed to commit task list deletion")
+		return nil, err
+	}
+
+	return &DeleteTaskListResult{
+		Item:          item,
+		OrphanedCount: orphanedCount,
+	}, nil
 }

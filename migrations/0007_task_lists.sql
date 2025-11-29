@@ -62,12 +62,13 @@ COMMENT ON COLUMN task_list.payload_json IS 'Client JSON with fields: uid, title
 
 -- Expression index on taskListUid extracted from task JSONB payload
 -- This enables efficient queries like: WHERE payload_json->>'taskListUid' = 'some-uid'
-CREATE INDEX CONCURRENTLY IF NOT EXISTS task_task_list_uid_idx 
+-- Note: Using regular CREATE INDEX (not CONCURRENTLY) for migration compatibility
+CREATE INDEX IF NOT EXISTS task_task_list_uid_idx
     ON task ((payload_json->>'taskListUid'))
     WHERE payload_json->>'taskListUid' IS NOT NULL;
 
 -- Expression index for standalone tasks (no task list)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS task_standalone_idx
+CREATE INDEX IF NOT EXISTS task_standalone_idx
     ON task ((payload_json->>'taskListUid'))
     WHERE payload_json->>'taskListUid' IS NULL;
 

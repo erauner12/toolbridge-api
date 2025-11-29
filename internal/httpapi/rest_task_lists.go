@@ -230,8 +230,7 @@ func (s *Server) PatchTaskList(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteTaskList handles DELETE /v1/task_lists/{uid}
-// By default, tasks in the list are orphaned (taskListUid set to null)
-// Use ?cascade=true to also delete the tasks
+// Tasks in the list are orphaned (taskListUid set to null) atomically with the deletion
 func (s *Server) DeleteTaskList(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	ctx := r.Context()
@@ -261,29 +260,21 @@ func (s *Server) DeleteTaskList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Orphan tasks by default (set taskListUid to null)
-	orphanedCount, err := s.TaskListSvc.OrphanTasksInList(ctx, userID, uid)
-	if err != nil {
-		logger.Error().Err(err).Msg("failed to orphan tasks in list")
-		writeError(w, r, 500, "failed to orphan tasks")
-		return
-	}
-
-	logger.Info().
-		Str("task_list_uid", uid.String()).
-		Int64("orphaned_tasks", orphanedCount).
-		Msg("orphaned tasks from deleted list")
-
-	// Soft delete the task list
-	opts := syncservice.MutationOpts{SetDeleted: true}
-	item, err := s.TaskListSvc.ApplyTaskListMutation(ctx, userID, existing.Payload, opts)
+	// Atomically orphan tasks and soft-delete the task list
+	// Both operations succeed or fail together
+	result, err := s.TaskListSvc.DeleteTaskListWithOrphan(ctx, userID, uid, existing.Payload)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to delete task_list")
 		writeError(w, r, 500, "failed to delete task_list")
 		return
 	}
 
-	writeJSON(w, 200, item)
+	logger.Info().
+		Str("task_list_uid", uid.String()).
+		Int64("orphaned_tasks", result.OrphanedCount).
+		Msg("deleted task list and orphaned tasks")
+
+	writeJSON(w, 200, result.Item)
 }
 
 // ArchiveTaskList handles POST /v1/task_lists/{uid}/archive
