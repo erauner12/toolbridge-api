@@ -29,6 +29,7 @@ const (
 type JWTCfg struct {
 	HS256Secret       string   // HMAC secret for HS256 tokens (dev/testing)
 	DevMode           bool     // Allow X-Debug-Sub header (DANGEROUS: only for local dev)
+	Env               string   // Environment indicator (e.g., "dev", "staging", "prod") - used to guard DevMode
 	Issuer            string   // Upstream IdP issuer (e.g., "https://your-app.authkit.app")
 	JWKSURL           string   // JWKS endpoint URL (e.g., "https://your-app.authkit.app/oauth2/jwks")
 	Audience          string   // Optional primary expected audience claim
@@ -364,10 +365,18 @@ func InitJWKSCache(cfg JWTCfg) error {
 // 2. Development HS256: Bearer tokens with HMAC secret (for testing)
 // 3. Development X-Debug-Sub: Bypass JWT validation (ONLY when DevMode=true)
 func Middleware(db *pgxpool.Pool, cfg JWTCfg) func(http.Handler) http.Handler {
+	// SECURITY GUARD: Prevent DevMode from being enabled in production
+	// This is a hard fail to prevent accidental auth bypass in production deployments
+	// Matches common production ENV values: "prod", "production", "prd"
+	if cfg.DevMode && (cfg.Env == "prod" || cfg.Env == "production" || cfg.Env == "prd") {
+		log.Fatal().Msg("SECURITY FATAL: DevMode is enabled in production environment - refusing to start. " +
+			"Set ENV to 'dev' or 'staging', or disable DevMode for production deployments.")
+	}
+
 	// Initialize JWKS cache for upstream IdP RS256 validation
 	_ = InitJWKSCache(cfg)
 
-	// Log warning if dev mode is enabled
+	// Log warning if dev mode is enabled (only reaches here if not in prod)
 	if cfg.DevMode {
 		log.Warn().Msg("SECURITY WARNING: DevMode enabled - X-Debug-Sub header will bypass JWT authentication")
 	}
