@@ -56,6 +56,11 @@ def render_notes_list_html(notes: Iterable["Note"]) -> str:
             <div class="note-title">{title}</div>
             <div class="note-preview">{content_preview}</div>
             <div class="note-meta">UID: {uid[:8]}... | v{note.version}</div>
+            <div class="note-actions">
+                <button class="btn btn-view" onclick="viewNote('{uid}')">👁 View</button>
+                <button class="btn btn-edit" onclick="editNote('{uid}')">✏️ Edit</button>
+                <button class="btn btn-delete" onclick="deleteNote('{uid}')">🗑️ Delete</button>
+            </div>
         </li>
         """
 
@@ -122,6 +127,54 @@ def render_notes_list_html(notes: Iterable["Note"]) -> str:
                 font-size: 18px;
                 margin-bottom: 20px;
             }}
+
+            /* Action buttons */
+            .note-actions {{
+                margin-top: 12px;
+                display: flex;
+                gap: 8px;
+                flex-wrap: wrap;
+            }}
+            .btn {{
+                padding: 8px 16px;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+            }}
+            .btn:hover {{
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            }}
+            .btn:active {{
+                transform: translateY(0);
+            }}
+            .btn-view {{
+                background: #3b82f6;
+                color: white;
+            }}
+            .btn-view:hover {{
+                background: #2563eb;
+            }}
+            .btn-edit {{
+                background: #f59e0b;
+                color: white;
+            }}
+            .btn-edit:hover {{
+                background: #d97706;
+            }}
+            .btn-delete {{
+                background: #ef4444;
+                color: white;
+            }}
+            .btn-delete:hover {{
+                background: #dc2626;
+            }}
         </style>
     </head>
     <body>
@@ -130,6 +183,36 @@ def render_notes_list_html(notes: Iterable["Note"]) -> str:
         <ul class="notes-list">
             {items_html}
         </ul>
+
+        <script>
+            // MCP-UI action helper - sends tool calls to the host
+            function callTool(toolName, params) {{
+                window.parent.postMessage({{
+                    type: 'tool',
+                    payload: {{
+                        toolName: toolName,
+                        params: params
+                    }}
+                }}, '*');
+            }}
+
+            // View note details
+            function viewNote(uid) {{
+                callTool('show_note_ui', {{ note_uid: uid }});
+            }}
+
+            // Edit a note
+            function editNote(uid) {{
+                callTool('edit_note', {{ note_uid: uid }});
+            }}
+
+            // Delete a note
+            function deleteNote(uid) {{
+                if (confirm('Are you sure you want to delete this note?')) {{
+                    callTool('delete_note', {{ note_uid: uid }});
+                }}
+            }}
+        </script>
     </body>
     </html>
     """

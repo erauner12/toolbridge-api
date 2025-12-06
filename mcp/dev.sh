@@ -112,9 +112,21 @@ case "${1:-help}" in
         ;;
     server)
         # Start only test server (useful during development)
+        # Also ensures Nanobot is running if OPENAI_API_KEY is set
         lsof -ti :$TEST_SERVER_PORT | xargs kill -9 2>/dev/null
         sleep 1
         start_test_server
+        # Check if Nanobot is down and restart it
+        if ! lsof -i :$NANOBOT_PORT >/dev/null 2>&1; then
+            if [ -n "$OPENAI_API_KEY" ]; then
+                echo "Nanobot was down, restarting..."
+                start_nanobot
+            else
+                echo "⚠ Nanobot is not running (set OPENAI_API_KEY to auto-start)"
+            fi
+        else
+            echo "✓ Nanobot still running on http://localhost:$NANOBOT_PORT"
+        fi
         ;;
     *)
         echo "MCP-UI Development Helper"

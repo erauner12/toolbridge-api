@@ -81,6 +81,16 @@ def render_tasks_list_html(tasks: Iterable["Task"]) -> str:
         if priority:
             priority_html = f'<span class="priority {priority_class}">{escape(priority)}</span>'
 
+        # Show different action buttons based on status
+        if status == "done":
+            action_buttons = f'''
+                <button class="btn btn-archive" onclick="archiveTask('{uid}')">📦 Archive</button>
+            '''
+        else:
+            action_buttons = f'''
+                <button class="btn btn-complete" onclick="completeTask('{uid}')">✅ Complete</button>
+            '''
+
         items_html += f"""
         <li class="task-item {priority_class}" data-uid="{uid}" data-status="{escape(status)}">
             <div class="task-header">
@@ -92,6 +102,10 @@ def render_tasks_list_html(tasks: Iterable["Task"]) -> str:
             <div class="task-meta">
                 {due_html}
                 <span class="uid">UID: {uid[:8]}...</span>
+            </div>
+            <div class="task-actions">
+                <button class="btn btn-view" onclick="viewTask('{uid}')">👁 View</button>
+                {action_buttons}
             </div>
         </li>
         """
@@ -155,6 +169,54 @@ def render_tasks_list_html(tasks: Iterable["Task"]) -> str:
             .task-meta {{ color: rgba(255,255,255,0.7); font-size: 13px; display: flex; gap: 16px; font-weight: 500; }}
             .due-date {{ color: #67e8f9; font-weight: 600; }}
             .count {{ color: #86efac; font-size: 16px; margin-bottom: 16px; }}
+
+            /* Action buttons */
+            .task-actions {{
+                margin-top: 12px;
+                display: flex;
+                gap: 8px;
+                flex-wrap: wrap;
+            }}
+            .btn {{
+                padding: 8px 16px;
+                border: none;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+            }}
+            .btn:hover {{
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            }}
+            .btn:active {{
+                transform: translateY(0);
+            }}
+            .btn-view {{
+                background: #3b82f6;
+                color: white;
+            }}
+            .btn-view:hover {{
+                background: #2563eb;
+            }}
+            .btn-complete {{
+                background: #22c55e;
+                color: white;
+            }}
+            .btn-complete:hover {{
+                background: #16a34a;
+            }}
+            .btn-archive {{
+                background: #6b7280;
+                color: white;
+            }}
+            .btn-archive:hover {{
+                background: #4b5563;
+            }}
         </style>
     </head>
     <body>
@@ -163,6 +225,34 @@ def render_tasks_list_html(tasks: Iterable["Task"]) -> str:
         <ul class="tasks-list">
             {items_html}
         </ul>
+
+        <script>
+            // MCP-UI action helper - sends tool calls to the host
+            function callTool(toolName, params) {{
+                window.parent.postMessage({{
+                    type: 'tool',
+                    payload: {{
+                        toolName: toolName,
+                        params: params
+                    }}
+                }}, '*');
+            }}
+
+            // View task details
+            function viewTask(uid) {{
+                callTool('show_task_ui', {{ task_uid: uid }});
+            }}
+
+            // Complete a task (mark as done)
+            function completeTask(uid) {{
+                callTool('complete_task', {{ task_uid: uid }});
+            }}
+
+            // Archive a completed task
+            function archiveTask(uid) {{
+                callTool('archive_task', {{ task_uid: uid }});
+            }}
+        </script>
     </body>
     </html>
     """
