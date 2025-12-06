@@ -165,10 +165,10 @@ async def show_task_ui(uid: str) -> List[Union[TextContent, EmbeddedResource]]:
 # ============================================================
 
 @mcp.tool()
-async def delete_note(uid: str) -> List[Union[TextContent, EmbeddedResource]]:
-    """Delete a note and return updated list.
+async def delete_note_ui(uid: str) -> List[Union[TextContent, EmbeddedResource]]:
+    """Delete a note and return updated UI list (MCP-UI).
 
-    Marks the note as deleted and returns the updated notes list.
+    Marks the note as deleted and returns the updated notes list with interactive HTML.
     """
     from datetime import datetime
 
@@ -191,11 +191,11 @@ async def delete_note(uid: str) -> List[Union[TextContent, EmbeddedResource]]:
 
 
 @mcp.tool()
-async def process_task(uid: str, action: str) -> List[Union[TextContent, EmbeddedResource]]:
-    """Process a task action (state machine transition).
+async def process_task_ui(uid: str, action: str) -> List[Union[TextContent, EmbeddedResource]]:
+    """Process a task action and return updated UI (MCP-UI).
 
     Supported actions: start, complete, reopen.
-    Returns the updated tasks list.
+    Returns the updated tasks list with interactive HTML.
     """
     # Find and process the task
     task_title = "Unknown"
@@ -222,10 +222,10 @@ async def process_task(uid: str, action: str) -> List[Union[TextContent, Embedde
 
 
 @mcp.tool()
-async def archive_task(uid: str) -> List[Union[TextContent, EmbeddedResource]]:
-    """Archive a task and return updated list.
+async def archive_task_ui(uid: str) -> List[Union[TextContent, EmbeddedResource]]:
+    """Archive a task and return updated UI (MCP-UI).
 
-    Marks the task as archived (deleted) and returns the updated tasks list.
+    Marks the task as archived (deleted) and returns the updated tasks list with interactive HTML.
     """
     from datetime import datetime
 

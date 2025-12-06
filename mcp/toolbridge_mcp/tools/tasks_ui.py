@@ -12,7 +12,7 @@ from loguru import logger
 from mcp.types import TextContent, EmbeddedResource
 
 from toolbridge_mcp.mcp_instance import mcp
-from toolbridge_mcp.tools.tasks import list_tasks, get_task, Task, TasksListResponse
+from toolbridge_mcp.tools.tasks import list_tasks, get_task, process_task, archive_task, Task, TasksListResponse
 from toolbridge_mcp.ui.resources import build_ui_with_text, UIContent
 from toolbridge_mcp.ui.templates import tasks as tasks_templates
 
@@ -132,6 +132,88 @@ async def show_task_ui(
 
     return build_ui_with_text(
         uri=ui_uri,
+        html=html,
+        text_summary=summary,
+    )
+
+
+@mcp.tool()
+async def process_task_ui(
+    uid: Annotated[str, Field(description="UID of the task to process")],
+    action: Annotated[str, Field(description="Action to perform (start, complete, reopen)")],
+) -> List[Union[TextContent, EmbeddedResource]]:
+    """
+    Process a task action and return updated UI (MCP-UI).
+
+    Performs the action and returns an updated task list with interactive HTML.
+    Supported actions: start, complete, reopen.
+
+    Args:
+        uid: Unique identifier of the task
+        action: Action to perform (start, complete, reopen)
+
+    Returns:
+        List containing TextContent (summary) and UIResource (updated HTML list)
+
+    Examples:
+        # Complete a task
+        >>> await process_task_ui("c1d9b7dc-...", "complete")
+
+        # Start a task
+        >>> await process_task_ui("c1d9b7dc-...", "start")
+    """
+    logger.info(f"Processing task UI: uid={uid}, action={action}")
+
+    # Perform the action using the underlying tool
+    updated_task: Task = await process_task(uid=uid, action=action)
+    task_title = updated_task.payload.get("title", "Task")
+
+    # Fetch updated task list and render UI
+    tasks_response: TasksListResponse = await list_tasks(limit=20)
+    html = tasks_templates.render_tasks_list_html(tasks_response.items)
+
+    action_emoji = {"complete": "✅", "start": "🔄", "reopen": "↩️"}.get(action, "✓")
+    summary = f"{action_emoji} {action.capitalize()}d '{task_title}' - {len(tasks_response.items)} task(s) total"
+
+    return build_ui_with_text(
+        uri="ui://toolbridge/tasks/list",
+        html=html,
+        text_summary=summary,
+    )
+
+
+@mcp.tool()
+async def archive_task_ui(
+    uid: Annotated[str, Field(description="UID of the task to archive")],
+) -> List[Union[TextContent, EmbeddedResource]]:
+    """
+    Archive a task and return updated UI (MCP-UI).
+
+    Archives the task and returns an updated task list with interactive HTML.
+
+    Args:
+        uid: Unique identifier of the task to archive
+
+    Returns:
+        List containing TextContent (summary) and UIResource (updated HTML list)
+
+    Examples:
+        >>> await archive_task_ui("c1d9b7dc-a1b2-4c3d-9e8f-7a6b5c4d3e2f")
+    """
+    logger.info(f"Archiving task UI: uid={uid}")
+
+    # Perform the archive using the underlying tool
+    archived_task: Task = await archive_task(uid=uid)
+    task_title = archived_task.payload.get("title", "Task")
+
+    # Fetch updated task list and render UI
+    tasks_response: TasksListResponse = await list_tasks(limit=20)
+    html = tasks_templates.render_tasks_list_html(tasks_response.items)
+
+    summary = f"📦 Archived '{task_title}' - {len(tasks_response.items)} task(s) remaining"
+
+    return build_ui_with_text(
+        uri="ui://toolbridge/tasks/list",
         html=html,
         text_summary=summary,
     )

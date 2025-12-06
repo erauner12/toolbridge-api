@@ -12,7 +12,7 @@ from loguru import logger
 from mcp.types import TextContent, EmbeddedResource
 
 from toolbridge_mcp.mcp_instance import mcp
-from toolbridge_mcp.tools.notes import list_notes, get_note, Note, NotesListResponse
+from toolbridge_mcp.tools.notes import list_notes, get_note, delete_note, Note, NotesListResponse
 from toolbridge_mcp.ui.resources import build_ui_with_text, UIContent
 from toolbridge_mcp.ui.templates import notes as notes_templates
 
@@ -122,6 +122,43 @@ async def show_note_ui(
 
     return build_ui_with_text(
         uri=ui_uri,
+        html=html,
+        text_summary=summary,
+    )
+
+
+@mcp.tool()
+async def delete_note_ui(
+    uid: Annotated[str, Field(description="UID of the note to delete")],
+) -> List[Union[TextContent, EmbeddedResource]]:
+    """
+    Delete a note and return updated UI (MCP-UI).
+
+    Soft deletes the note and returns an updated notes list with interactive HTML.
+
+    Args:
+        uid: Unique identifier of the note to delete
+
+    Returns:
+        List containing TextContent (summary) and UIResource (updated HTML list)
+
+    Examples:
+        >>> await delete_note_ui("c1d9b7dc-a1b2-4c3d-9e8f-7a6b5c4d3e2f")
+    """
+    logger.info(f"Deleting note UI: uid={uid}")
+
+    # Perform the delete using the underlying tool
+    deleted_note: Note = await delete_note(uid=uid)
+    note_title = deleted_note.payload.get("title", "Note")
+
+    # Fetch updated notes list and render UI
+    notes_response: NotesListResponse = await list_notes(limit=20)
+    html = notes_templates.render_notes_list_html(notes_response.items)
+
+    summary = f"🗑️ Deleted '{note_title}' - {len(notes_response.items)} note(s) remaining"
+
+    return build_ui_with_text(
+        uri="ui://toolbridge/notes/list",
         html=html,
         text_summary=summary,
     )

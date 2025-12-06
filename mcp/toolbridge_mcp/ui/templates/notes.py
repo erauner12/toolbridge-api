@@ -194,9 +194,9 @@ def render_notes_list_html(notes: Iterable["Note"]) -> str:
                 callTool('show_note_ui', {{ uid: noteUid }});
             }}
 
-            // Delete a note (no confirm - browser dialogs blocked in iframes)
+            // Delete a note - uses UI tool for interactive response
             function deleteNote(noteUid) {{
-                callTool('delete_note', {{ uid: noteUid }});
+                callTool('delete_note_ui', {{ uid: noteUid }});
             }}
         </script>
     </body>

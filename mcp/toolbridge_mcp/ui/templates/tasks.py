@@ -244,14 +244,14 @@ def render_tasks_list_html(tasks: Iterable["Task"]) -> str:
                 callTool('show_task_ui', {{ uid: taskUid }});
             }}
 
-            // Complete a task (mark as done) using process_task action
+            // Complete a task (mark as done) - uses UI tool for interactive response
             function completeTask(taskUid) {{
-                callTool('process_task', {{ uid: taskUid, action: 'complete' }});
+                callTool('process_task_ui', {{ uid: taskUid, action: 'complete' }});
             }}
 
-            // Archive a completed task
+            // Archive a completed task - uses UI tool for interactive response
             function archiveTask(taskUid) {{
-                callTool('archive_task', {{ uid: taskUid }});
+                callTool('archive_task_ui', {{ uid: taskUid }});
             }}
         </script>
     </body>
