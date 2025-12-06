@@ -206,11 +206,9 @@ def render_notes_list_html(notes: Iterable["Note"]) -> str:
                 callTool('edit_note', {{ note_uid: uid }});
             }}
 
-            // Delete a note
+            // Delete a note (no confirm - browser dialogs blocked in iframes)
             function deleteNote(uid) {{
-                if (confirm('Are you sure you want to delete this note?')) {{
-                    callTool('delete_note', {{ note_uid: uid }});
-                }}
+                callTool('delete_note', {{ note_uid: uid }});
             }}
         </script>
     </body>

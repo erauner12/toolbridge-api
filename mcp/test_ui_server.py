@@ -22,57 +22,59 @@ logger.add(sys.stderr, level="INFO", format="<level>{message}</level>", colorize
 # Create MCP server WITHOUT authentication
 mcp = FastMCP(name="ToolBridge-UI-Test")
 
-# Mock data for testing
-MOCK_NOTES = [
-    {
-        "uid": "note-123",
-        "version": 1,
-        "updatedAt": "2025-01-01T00:00:00Z",
-        "deletedAt": None,
-        "payload": {
-            "title": "Test Note from Mock API",
-            "content": "This is test content from the mocked Go API",
-            "tags": ["test", "mock"]
+# Mock data for testing (mutable state for interactive testing)
+# This simulates a database that persists across tool calls
+mock_state = {
+    "notes": [
+        {
+            "uid": "note-123",
+            "version": 1,
+            "updatedAt": "2025-01-01T00:00:00Z",
+            "deletedAt": None,
+            "payload": {
+                "title": "Test Note from Mock API",
+                "content": "This is test content from the mocked Go API",
+                "tags": ["test", "mock"]
+            }
+        },
+        {
+            "uid": "note-456",
+            "version": 2,
+            "updatedAt": "2025-01-02T00:00:00Z",
+            "deletedAt": None,
+            "payload": {
+                "title": "Second Test Note",
+                "content": "Another test note with some content",
+            }
         }
-    },
-    {
-        "uid": "note-456",
-        "version": 2,
-        "updatedAt": "2025-01-02T00:00:00Z",
-        "deletedAt": None,
-        "payload": {
-            "title": "Second Test Note",
-            "content": "Another test note with some content",
+    ],
+    "tasks": [
+        {
+            "uid": "task-789",
+            "version": 1,
+            "updatedAt": "2025-01-01T00:00:00Z",
+            "deletedAt": None,
+            "payload": {
+                "title": "Test Task from Mock API",
+                "description": "This is a test task description",
+                "status": "in_progress",
+                "priority": "high"
+            }
+        },
+        {
+            "uid": "task-101",
+            "version": 1,
+            "updatedAt": "2025-01-03T00:00:00Z",
+            "deletedAt": None,
+            "payload": {
+                "title": "Completed Task Example",
+                "description": "A task that's already done",
+                "status": "done",
+                "priority": "low"
+            }
         }
-    }
-]
-
-MOCK_TASKS = [
-    {
-        "uid": "task-789",
-        "version": 1,
-        "updatedAt": "2025-01-01T00:00:00Z",
-        "deletedAt": None,
-        "payload": {
-            "title": "Test Task from Mock API",
-            "description": "This is a test task description",
-            "status": "in_progress",
-            "priority": "high"
-        }
-    },
-    {
-        "uid": "task-101",
-        "version": 1,
-        "updatedAt": "2025-01-03T00:00:00Z",
-        "deletedAt": None,
-        "payload": {
-            "title": "Completed Task Example",
-            "description": "A task that's already done",
-            "status": "done",
-            "priority": "low"
-        }
-    }
-]
+    ]
+}
 
 # Import UI helper from the actual codebase
 from toolbridge_mcp.ui.resources import build_ui_with_text
@@ -83,13 +85,13 @@ from toolbridge_mcp.tools.tasks import Task
 
 
 def get_mock_notes():
-    """Convert mock note dicts to Pydantic models."""
-    return [Note(**n) for n in MOCK_NOTES]
+    """Convert mock note dicts to Pydantic models (only non-deleted)."""
+    return [Note(**n) for n in mock_state["notes"] if n.get("deletedAt") is None]
 
 
 def get_mock_tasks():
-    """Convert mock task dicts to Pydantic models."""
-    return [Task(**t) for t in MOCK_TASKS]
+    """Convert mock task dicts to Pydantic models (only non-archived)."""
+    return [Task(**t) for t in mock_state["tasks"] if t.get("deletedAt") is None]
 
 
 @mcp.tool()
@@ -181,46 +183,78 @@ async def edit_note(note_uid: str) -> List[Union[TextContent, EmbeddedResource]]
 
 
 @mcp.tool()
-async def delete_note(note_uid: str) -> TextContent:
-    """Delete a note (stub - returns confirmation).
+async def delete_note(note_uid: str) -> List[Union[TextContent, EmbeddedResource]]:
+    """Delete a note and return updated list.
 
-    In a real implementation, this would delete the note from storage.
+    Marks the note as deleted and returns the updated notes list.
     """
-    return TextContent(
-        type="text",
-        text=f"✅ Note {note_uid} deleted successfully (stub - no actual deletion)",
+    from datetime import datetime
+
+    # Find and mark note as deleted
+    note_title = "Unknown"
+    for note in mock_state["notes"]:
+        if note["uid"] == note_uid:
+            note["deletedAt"] = datetime.now().isoformat()
+            note_title = note["payload"].get("title", "Note")
+            break
+
+    # Return updated notes list
+    notes = get_mock_notes()
+    html = notes_templates.render_notes_list_html(notes)
+    return build_ui_with_text(
+        uri="ui://toolbridge/notes/list",
+        html=html,
+        text_summary=f"🗑️ Deleted '{note_title}' - {len(notes)} note(s) remaining",
     )
 
 
 @mcp.tool()
 async def complete_task(task_uid: str) -> List[Union[TextContent, EmbeddedResource]]:
-    """Mark a task as complete (stub - returns updated task list).
+    """Mark a task as complete and return updated list.
 
-    In a real implementation, this would update the task status.
+    Sets the task status to 'done' and returns the updated tasks list.
     """
-    # Return refreshed task list
+    # Find and mark task as complete
+    task_title = "Unknown"
+    for task in mock_state["tasks"]:
+        if task["uid"] == task_uid:
+            task["payload"]["status"] = "done"
+            task_title = task["payload"].get("title", "Task")
+            break
+
+    # Return updated tasks list
     tasks = get_mock_tasks()
     html = tasks_templates.render_tasks_list_html(tasks)
     return build_ui_with_text(
         uri="ui://toolbridge/tasks/list",
         html=html,
-        text_summary=f"✅ Task {task_uid} marked as complete (stub)",
+        text_summary=f"✅ Completed '{task_title}' - {len(tasks)} task(s) total",
     )
 
 
 @mcp.tool()
 async def archive_task(task_uid: str) -> List[Union[TextContent, EmbeddedResource]]:
-    """Archive a completed task (stub - returns updated task list).
+    """Archive a task and return updated list.
 
-    In a real implementation, this would archive the task.
+    Marks the task as archived (deleted) and returns the updated tasks list.
     """
-    # Return refreshed task list
+    from datetime import datetime
+
+    # Find and mark task as archived
+    task_title = "Unknown"
+    for task in mock_state["tasks"]:
+        if task["uid"] == task_uid:
+            task["deletedAt"] = datetime.now().isoformat()
+            task_title = task["payload"].get("title", "Task")
+            break
+
+    # Return updated tasks list
     tasks = get_mock_tasks()
     html = tasks_templates.render_tasks_list_html(tasks)
     return build_ui_with_text(
         uri="ui://toolbridge/tasks/list",
         html=html,
-        text_summary=f"📦 Task {task_uid} archived (stub)",
+        text_summary=f"📦 Archived '{task_title}' - {len(tasks)} task(s) remaining",
     )
 
 
