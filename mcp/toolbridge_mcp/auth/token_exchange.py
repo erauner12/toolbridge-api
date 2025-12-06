@@ -175,24 +175,32 @@ def issue_backend_jwt(
         raise TokenExchangeError(f"Failed to sign backend JWT: {e}")
 
 
-def extract_user_id_from_backend_jwt(backend_jwt: str) -> str:
+def _unsafe_extract_user_id_for_logging(backend_jwt: str) -> str:
     """
-    Extract user ID from backend JWT without signature verification.
-    
-    This is safe because:
-    1. We just issued/received this JWT ourselves
-    2. Backend will verify signature anyway
-    3. Only used for session creation logging
-    
+    WARNING: Logging-only helper - DO NOT use for authorization decisions.
+
+    Extracts user ID (sub claim) from backend JWT WITHOUT ANY VALIDATION.
+    All security checks are disabled:
+    - No signature verification
+    - No issuer / audience / expiry checks
+
+    SECURITY CONSTRAINTS:
+    This function MUST ONLY be used for debug logging in code paths that:
+    1. Already trust this JWT because they just issued/received it, AND
+    2. Do not make any security decisions based on the returned value.
+
+    If you need to make authorization decisions based on JWT claims, you MUST
+    use a validated token from the backend API or implement proper validation.
+
     Args:
-        backend_jwt: Backend JWT token string
-        
+        backend_jwt: Backend JWT token string (trusted source only)
+
     Returns:
-        User ID (sub claim)
+        User ID (sub claim) or "unknown" if extraction fails
     """
     try:
         # python-jose requires a key parameter even when not verifying signature
-        # We also disable all validation since we're just extracting claims for logging
+        # All validation is disabled - this is intentional for logging-only use
         decoded = jwt.decode(
             backend_jwt,
             "",  # Empty key since we're not verifying
@@ -209,5 +217,12 @@ def extract_user_id_from_backend_jwt(backend_jwt: str) -> str:
         )
         return decoded.get("sub", "unknown")
     except Exception as e:
-        logger.warning(f"Failed to decode backend JWT: {e}")
+        logger.warning(f"Failed to decode backend JWT for logging: {e}")
         return "unknown"
+
+
+# Backwards compatibility alias - prefer using the explicit unsafe name
+# TODO: Remove this alias after updating all call sites
+def extract_user_id_from_backend_jwt(backend_jwt: str) -> str:
+    """DEPRECATED: Use _unsafe_extract_user_id_for_logging instead."""
+    return _unsafe_extract_user_id_for_logging(backend_jwt)

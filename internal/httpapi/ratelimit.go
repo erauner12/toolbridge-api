@@ -172,6 +172,12 @@ func (rl *RateLimiter) cleanupLoop() {
 // allowing different routes to have different rate limits.
 // Production Note: For distributed systems, replace with Redis-backed rate limiter.
 func RateLimitMiddleware(config RateLimitInfo) func(http.Handler) http.Handler {
+	// Use default config if provided config is zero-valued (e.g., in tests)
+	// This prevents immediate 429s when Server{} is created without explicit config
+	if config.WindowSeconds == 0 || config.MaxRequests == 0 || config.Burst == 0 {
+		config = DefaultRateLimitConfig
+	}
+
 	// Create a dedicated rate limiter for this middleware instance
 	// This allows different routes to have different rate limits
 	limiter := NewRateLimiter(config)
