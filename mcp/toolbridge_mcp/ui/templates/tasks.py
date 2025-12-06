@@ -100,36 +100,66 @@ def render_tasks_list_html(tasks: Iterable["Task"]) -> str:
     <html>
     <head>
         <style>
-            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 16px; margin: 0; }}
-            h2 {{ margin-top: 0; color: #333; }}
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                padding: 24px;
+                margin: 0;
+                background: transparent;
+                font-size: 18px;
+                color: #e0e0e0;
+            }}
+            h2 {{
+                margin-top: 0;
+                color: #ffffff;
+                font-size: 32px;
+                margin-bottom: 12px;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            }}
             .tasks-list {{ list-style: none; padding: 0; margin: 0; }}
             .task-item {{
-                padding: 12px;
-                margin-bottom: 8px;
-                background: #f8f9fa;
-                border-radius: 8px;
-                border-left: 4px solid #28a745;
+                padding: 20px 24px;
+                margin-bottom: 16px;
+                background: linear-gradient(135deg, #1a4d1a 0%, #2d7a2d 100%);
+                border-radius: 16px;
+                border-left: 8px solid #4caf50;
+                box-shadow: 0 4px 16px rgba(0,0,0,0.3);
             }}
-            .task-item.priority-high {{ border-left-color: #dc3545; }}
-            .task-item.priority-medium {{ border-left-color: #ffc107; }}
-            .task-item.priority-low {{ border-left-color: #6c757d; }}
-            .task-header {{ display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }}
-            .status-icon {{ font-size: 16px; }}
-            .task-title {{ font-weight: 600; color: #333; flex: 1; }}
+            .task-item.priority-high {{
+                border-left-color: #ff5252;
+                background: linear-gradient(135deg, #5a1a1a 0%, #8b2d2d 100%);
+            }}
+            .task-item.priority-medium {{
+                border-left-color: #ffc107;
+                background: linear-gradient(135deg, #5a4a1a 0%, #8b7a2d 100%);
+            }}
+            .task-item.priority-low {{
+                border-left-color: #90a4ae;
+                background: linear-gradient(135deg, #37474f 0%, #546e7a 100%);
+            }}
+            .task-header {{ display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }}
+            .status-icon {{ font-size: 28px; }}
+            .task-title {{ font-weight: 700; color: #ffffff; flex: 1; font-size: 22px; }}
             .priority {{
-                font-size: 11px;
-                padding: 2px 6px;
-                border-radius: 4px;
+                font-size: 13px;
+                padding: 6px 14px;
+                border-radius: 8px;
                 text-transform: uppercase;
-                font-weight: 500;
+                font-weight: 800;
+                letter-spacing: 1px;
             }}
-            .priority-high {{ background: #f8d7da; color: #721c24; }}
-            .priority-medium {{ background: #fff3cd; color: #856404; }}
-            .priority-low {{ background: #e2e3e5; color: #383d41; }}
-            .task-description {{ color: #666; font-size: 14px; margin-bottom: 4px; }}
-            .task-meta {{ color: #999; font-size: 12px; display: flex; gap: 12px; }}
-            .due-date {{ color: #007bff; }}
-            .count {{ color: #666; font-size: 14px; margin-bottom: 12px; }}
+            .priority-high {{ background: #ff5252; color: #ffffff; }}
+            .priority-medium {{ background: #ffc107; color: #1a1a1a; }}
+            .priority-low {{ background: #78909c; color: #ffffff; }}
+            .task-description {{ color: #c8e6c9; font-size: 17px; margin-bottom: 10px; line-height: 1.5; }}
+            .task-item.priority-high .task-description {{ color: #ffcdd2; }}
+            .task-item.priority-medium .task-description {{ color: #fff8e1; }}
+            .task-item.priority-low .task-description {{ color: #cfd8dc; }}
+            .task-meta {{ color: #81c784; font-size: 14px; display: flex; gap: 20px; font-weight: 500; }}
+            .task-item.priority-high .task-meta {{ color: #ef9a9a; }}
+            .task-item.priority-medium .task-meta {{ color: #ffe082; }}
+            .task-item.priority-low .task-meta {{ color: #b0bec5; }}
+            .due-date {{ color: #4fc3f7; font-weight: 600; }}
+            .count {{ color: #a5d6a7; font-size: 18px; margin-bottom: 20px; }}
         </style>
     </head>
     <body>

@@ -63,20 +63,52 @@ def render_notes_list_html(notes: Iterable["Note"]) -> str:
     <html>
     <head>
         <style>
-            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 16px; margin: 0; }}
-            h2 {{ margin-top: 0; color: #333; }}
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                padding: 24px;
+                margin: 0;
+                background: transparent;
+                font-size: 18px;
+                color: #e0e0e0;
+            }}
+            h2 {{
+                margin-top: 0;
+                color: #ffffff;
+                font-size: 32px;
+                margin-bottom: 12px;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            }}
             .notes-list {{ list-style: none; padding: 0; margin: 0; }}
             .note-item {{
-                padding: 12px;
-                margin-bottom: 8px;
-                background: #f8f9fa;
-                border-radius: 8px;
-                border-left: 4px solid #007bff;
+                padding: 20px 24px;
+                margin-bottom: 16px;
+                background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+                border-radius: 16px;
+                border-left: 8px solid #4da6ff;
+                box-shadow: 0 4px 16px rgba(0,0,0,0.3);
             }}
-            .note-title {{ font-weight: 600; color: #333; margin-bottom: 4px; }}
-            .note-preview {{ color: #666; font-size: 14px; margin-bottom: 4px; }}
-            .note-meta {{ color: #999; font-size: 12px; }}
-            .count {{ color: #666; font-size: 14px; margin-bottom: 12px; }}
+            .note-title {{
+                font-weight: 700;
+                color: #ffffff;
+                margin-bottom: 10px;
+                font-size: 22px;
+            }}
+            .note-preview {{
+                color: #b8d4e8;
+                font-size: 17px;
+                margin-bottom: 10px;
+                line-height: 1.5;
+            }}
+            .note-meta {{
+                color: #7ab8e0;
+                font-size: 14px;
+                font-weight: 500;
+            }}
+            .count {{
+                color: #a0c4e8;
+                font-size: 18px;
+                margin-bottom: 20px;
+            }}
         </style>
     </head>
     <body>
