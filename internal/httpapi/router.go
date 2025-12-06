@@ -17,7 +17,8 @@ import (
 // Server holds dependencies for HTTP handlers
 type Server struct {
 	DB              *pgxpool.Pool
-	RateLimitConfig RateLimitInfo // Centralized rate limit configuration
+	RateLimitConfig     RateLimitInfo // Centralized rate limit configuration for sync endpoints
+	AuthRateLimitConfig RateLimitInfo // Stricter rate limit for auth/bootstrap endpoints
 	JWTCfg          auth.JWTCfg   // JWT authentication configuration
 	WorkOSClient    *usermanagement.Client // WorkOS client for tenant resolution
 	DefaultTenantID string        // Default tenant ID for B2C users (no organization memberships)
@@ -32,11 +33,20 @@ type Server struct {
 	ChatMessageSvc      *syncservice.ChatMessageService
 }
 
-// DefaultRateLimitConfig provides the default rate limiting configuration
+// DefaultRateLimitConfig provides the default rate limiting configuration for sync endpoints
 var DefaultRateLimitConfig = RateLimitInfo{
 	WindowSeconds: 60,  // 1 minute window
 	MaxRequests:   600, // 600 requests per window (sustained rate)
 	Burst:         120, // Allow burst of 120 requests
+}
+
+// DefaultAuthRateLimitConfig provides stricter rate limiting for auth/bootstrap endpoints
+// These endpoints are more sensitive (token exchange, tenant resolution, session creation)
+// and should have lower limits to mitigate brute force and abuse
+var DefaultAuthRateLimitConfig = RateLimitInfo{
+	WindowSeconds: 60, // 1 minute window
+	MaxRequests:   60, // 60 auth requests per minute per client
+	Burst:         20, // Small burst allowance
 }
 
 // Common request/response types for sync endpoints
@@ -130,21 +140,25 @@ func (s *Server) Routes(jwt auth.JWTCfg) http.Handler {
 
 		// Bootstrap endpoints that don't require tenant headers
 		// These are used to discover tenant ID or exchange tokens before tenant is known
+		// Rate limited with stricter auth defaults (60 req/min vs 600 for sync endpoints)
+		r.Group(func(r chi.Router) {
+			r.Use(AuthRateLimitMiddleware(s.AuthRateLimitConfig))
 
-		// Token exchange (Path B OAuth 2.1)
-		// Converts MCP OAuth tokens to backend JWTs
-		// No session or tenant headers required (this is used to bootstrap authentication)
-		r.Post("/auth/token-exchange", s.TokenExchange)
+			// Token exchange (Path B OAuth 2.1)
+			// Converts MCP OAuth tokens to backend JWTs
+			// No session or tenant headers required (this is used to bootstrap authentication)
+			r.Post("/auth/token-exchange", s.TokenExchange)
 
-		// Tenant resolution via WorkOS API
-		// Returns organization ID for authenticated user
-		// No session or tenant headers required (this is used to resolve tenant before making API calls)
-		r.Get("/v1/auth/tenant", s.ResolveTenant)
+			// Tenant resolution via WorkOS API
+			// Returns organization ID for authenticated user
+			// No session or tenant headers required (this is used to resolve tenant before making API calls)
+			r.Get("/v1/auth/tenant", s.ResolveTenant)
 
-		// Session management (no session or rate limit required for these)
-		r.Post("/v1/sync/sessions", s.BeginSession)
-		r.Get("/v1/sync/sessions/{id}", s.GetSession)
-		r.Delete("/v1/sync/sessions/{id}", s.EndSession)
+			// Session management (rate limited but no session header required for these)
+			r.Post("/v1/sync/sessions", s.BeginSession)
+			r.Get("/v1/sync/sessions/{id}", s.GetSession)
+			r.Delete("/v1/sync/sessions/{id}", s.EndSession)
+		})
 
 		// Routes that require tenant header validation (MCP deployments)
 		r.Group(func(r chi.Router) {
@@ -190,10 +204,11 @@ func (s *Server) Routes(jwt auth.JWTCfg) http.Handler {
 		})
 
 		// REST CRUD endpoints require same protections as sync endpoints
+		// Note: SimpleTenantHeaderMiddleware is applied at the parent group level (line ~149)
+		// so we don't need to apply it again here
 		r.Group(func(r chi.Router) {
 			r.Use(SessionRequired)
 			r.Use(RateLimitMiddleware(s.RateLimitConfig))
-			r.Use(auth.SimpleTenantHeaderMiddleware(s.WorkOSClient, s.TenantAuthCache, s.DefaultTenantID))
 			r.Use(EpochRequired(s.DB))
 
 			// Notes REST endpoints

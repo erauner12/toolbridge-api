@@ -108,7 +108,30 @@ func (s *Server) TokenExchange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Sign JWT with HS256 (using shared secret)
-	// In production, consider using RS256 with a dedicated signing key
+	//
+	// TODO(SRE-67): RS256 MIGRATION PATH (recommended for production multi-service deployments):
+	// Currently using HS256 with shared secret for simplicity. For production with
+	// multiple services validating backend tokens, consider migrating to RS256:
+	//
+	// Phase 1 - Add RS256 support (opt-in):
+	//   1. Extend JWTCfg with BackendRSAPrivateKeyPEM and BackendKeyID fields
+	//   2. Create BackendSigner struct to hold parsed RSA keys
+	//   3. If RSA key configured, sign with RS256; else fall back to HS256
+	//   4. Update ValidateToken to handle backend RS256 tokens (check iss="toolbridge-api")
+	//
+	// Phase 2 - Production rollout:
+	//   1. Generate RSA key pair for backend tokens
+	//   2. Configure BackendRSAPrivateKeyPEM in production
+	//   3. Distribute public key to services that validate backend tokens
+	//   4. Remove HS256Secret from production config (keep for dev)
+	//
+	// Benefits of RS256:
+	//   - Private key only on signer (token exchange endpoint)
+	//   - Public key can be distributed to validators without security risk
+	//   - Supports key rotation via kid header
+	//   - Industry standard for multi-service JWT validation
+	//
+	// See: internal/auth/jwt.go for validation implementation
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	tokenString, err := token.SignedString([]byte(jwtCfg.HS256Secret))
 	if err != nil {
