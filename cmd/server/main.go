@@ -89,6 +89,7 @@ func main() {
 	jwtCfg := auth.JWTCfg{
 		HS256Secret:       jwtSecret,
 		DevMode:           isDevMode,
+		Env:               env("ENV", ""), // Used to guard DevMode in production (log.Fatal if DevMode && Env=="prod")
 		Issuer:            jwtIssuer,
 		JWKSURL:           jwksURL,
 		Audience:          jwtAudience,
@@ -119,9 +120,10 @@ func main() {
 
 	// HTTP server setup
 	srv := &httpapi.Server{
-		DB:              pool,
-		RateLimitConfig: httpapi.DefaultRateLimitConfig,
-		JWTCfg:          jwtCfg,
+		DB:                  pool,
+		RateLimitConfig:     httpapi.DefaultRateLimitConfig,
+		AuthRateLimitConfig: httpapi.DefaultAuthRateLimitConfig, // Stricter limits for auth endpoints
+		JWTCfg:              jwtCfg,
 		WorkOSClient:    workosClient,
 		DefaultTenantID: defaultTenantID,
 		TenantAuthCache: tenantAuthCache,
