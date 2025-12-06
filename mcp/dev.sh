@@ -5,12 +5,23 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Load OPENAI_API_KEY from .env.nanobot if present (only for Nanobot)
+load_openai_key() {
+    if [ -z "$OPENAI_API_KEY" ] && [ -f ".env.nanobot" ]; then
+        export OPENAI_API_KEY=$(grep "^OPENAI_API_KEY=" .env.nanobot | cut -d'=' -f2)
+    fi
+}
+
 # Ports
 TEST_SERVER_PORT=8099
 NANOBOT_PORT=8080
 
 start_test_server() {
     echo "Starting test server on port $TEST_SERVER_PORT..."
+    # Set required env vars for test server (dummy values for testing)
+    # Note: Settings uses TOOLBRIDGE_ prefix
+    TOOLBRIDGE_AUTHKIT_DOMAIN="https://dummy.authkit.app" \
+    TOOLBRIDGE_PUBLIC_BASE_URL="http://localhost:8099" \
     .venv/bin/python test_ui_server.py > /tmp/test_ui_server.log 2>&1 &
     echo $! > /tmp/test_ui_server.pid
     sleep 2
@@ -23,9 +34,10 @@ start_test_server() {
 }
 
 start_nanobot() {
+    load_openai_key
     if [ -z "$OPENAI_API_KEY" ]; then
-        echo "✗ OPENAI_API_KEY not set. Export it first:"
-        echo "  export OPENAI_API_KEY=sk-..."
+        echo "✗ OPENAI_API_KEY not set. Add it to .env.nanobot or export it:"
+        echo "  echo 'OPENAI_API_KEY=sk-...' >> .env.nanobot"
         return 1
     fi
     echo "Starting Nanobot on port $NANOBOT_PORT..."

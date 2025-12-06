@@ -158,6 +158,72 @@ async def show_task_ui(task_uid: str) -> List[Union[TextContent, EmbeddedResourc
     )
 
 
+# ============================================================
+# Action tools (stubs for testing button interactions)
+# ============================================================
+
+@mcp.tool()
+async def edit_note(note_uid: str) -> List[Union[TextContent, EmbeddedResource]]:
+    """Edit a note (stub - returns confirmation and refreshes UI).
+
+    In a real implementation, this would open an edit form.
+    """
+    notes = get_mock_notes()
+    note = next((n for n in notes if n.uid == note_uid), notes[0])
+    title = note.payload.get("title", "Note")
+    # Return the note detail view (simulating edit mode)
+    html = notes_templates.render_note_detail_html(note)
+    return build_ui_with_text(
+        uri=f"ui://toolbridge/notes/{note.uid}/edit",
+        html=html,
+        text_summary=f"Editing note: {title}",
+    )
+
+
+@mcp.tool()
+async def delete_note(note_uid: str) -> TextContent:
+    """Delete a note (stub - returns confirmation).
+
+    In a real implementation, this would delete the note from storage.
+    """
+    return TextContent(
+        type="text",
+        text=f"✅ Note {note_uid} deleted successfully (stub - no actual deletion)",
+    )
+
+
+@mcp.tool()
+async def complete_task(task_uid: str) -> List[Union[TextContent, EmbeddedResource]]:
+    """Mark a task as complete (stub - returns updated task list).
+
+    In a real implementation, this would update the task status.
+    """
+    # Return refreshed task list
+    tasks = get_mock_tasks()
+    html = tasks_templates.render_tasks_list_html(tasks)
+    return build_ui_with_text(
+        uri="ui://toolbridge/tasks/list",
+        html=html,
+        text_summary=f"✅ Task {task_uid} marked as complete (stub)",
+    )
+
+
+@mcp.tool()
+async def archive_task(task_uid: str) -> List[Union[TextContent, EmbeddedResource]]:
+    """Archive a completed task (stub - returns updated task list).
+
+    In a real implementation, this would archive the task.
+    """
+    # Return refreshed task list
+    tasks = get_mock_tasks()
+    html = tasks_templates.render_tasks_list_html(tasks)
+    return build_ui_with_text(
+        uri="ui://toolbridge/tasks/list",
+        html=html,
+        text_summary=f"📦 Task {task_uid} archived (stub)",
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
     from starlette.applications import Starlette
