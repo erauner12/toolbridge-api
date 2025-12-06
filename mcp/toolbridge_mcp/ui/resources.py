@@ -54,6 +54,12 @@ def build_ui_with_text(
             "type": "rawHtml",
             "htmlString": html,
         },
+        "uiMetadata": {
+            "preferred-frame-size": ["100%", "100%"],
+        },
+        "metadata": {
+            "ai.nanobot.meta/workspace": True,
+        },
         "encoding": "text",
     })
 
