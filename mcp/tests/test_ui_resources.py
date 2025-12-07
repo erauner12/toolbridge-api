@@ -157,3 +157,152 @@ class TestUIContentType:
         # This is a type alias, so we just verify it exists and is usable
         # The actual type checking happens at runtime/mypy level
         assert UIContent is not None
+
+
+class TestUIFormat:
+    """Test suite for UIFormat enum."""
+
+    def test_uiformat_values(self):
+        """Test that UIFormat has expected values."""
+        from toolbridge_mcp.ui.resources import UIFormat
+
+        assert UIFormat.HTML.value == "html"
+        assert UIFormat.REMOTE_DOM.value == "remote-dom"
+        assert UIFormat.BOTH.value == "both"
+
+    def test_uiformat_string_conversion(self):
+        """Test that UIFormat can be created from strings."""
+        from toolbridge_mcp.ui.resources import UIFormat
+
+        assert UIFormat("html") == UIFormat.HTML
+        assert UIFormat("remote-dom") == UIFormat.REMOTE_DOM
+        assert UIFormat("both") == UIFormat.BOTH
+
+
+class TestBuildUIWithTextAndDom:
+    """Test suite for the build_ui_with_text_and_dom helper."""
+
+    def test_html_only_returns_two_elements(self):
+        """Test that HTML format returns text + HTML resource."""
+        from toolbridge_mcp.ui.resources import build_ui_with_text_and_dom, UIFormat
+
+        result = build_ui_with_text_and_dom(
+            uri="ui://test/example",
+            html="<p>Hello</p>",
+            remote_dom=None,
+            text_summary="Test summary",
+            ui_format=UIFormat.HTML,
+        )
+
+        assert len(result) == 2
+        assert result[0].type == "text"
+        assert result[0].text == "Test summary"
+        assert result[1].type == "resource"
+        assert result[1].resource.mimeType == "text/html"
+
+    def test_remote_dom_only_returns_two_elements(self):
+        """Test that Remote DOM format returns text + Remote DOM resource."""
+        from toolbridge_mcp.ui.resources import build_ui_with_text_and_dom, UIFormat
+
+        dom = {"type": "text", "props": {"text": "Hello"}}
+        result = build_ui_with_text_and_dom(
+            uri="ui://test/remote",
+            html=None,
+            remote_dom=dom,
+            text_summary="Summary",
+            ui_format=UIFormat.REMOTE_DOM,
+        )
+
+        assert len(result) == 2
+        assert result[0].type == "text"
+        assert result[1].type == "resource"
+        assert result[1].resource.mimeType == "application/vnd.mcp-ui.remote-dom"
+        assert '"type":"text"' in result[1].resource.text
+
+    def test_both_returns_three_elements(self):
+        """Test that BOTH format returns text + HTML + Remote DOM."""
+        from toolbridge_mcp.ui.resources import build_ui_with_text_and_dom, UIFormat
+
+        dom = {"type": "column", "children": []}
+        result = build_ui_with_text_and_dom(
+            uri="ui://test/both",
+            html="<div>HTML</div>",
+            remote_dom=dom,
+            text_summary="Both formats",
+            ui_format=UIFormat.BOTH,
+        )
+
+        assert len(result) == 3
+        assert result[0].type == "text"
+        assert result[1].type == "resource"
+        assert result[1].resource.mimeType == "text/html"
+        assert result[2].type == "resource"
+        assert result[2].resource.mimeType == "application/vnd.mcp-ui.remote-dom"
+
+    def test_html_missing_for_html_format_raises_error(self):
+        """Test that missing HTML raises ValueError for HTML format."""
+        from toolbridge_mcp.ui.resources import build_ui_with_text_and_dom, UIFormat
+
+        with pytest.raises(ValueError, match="html must be provided"):
+            build_ui_with_text_and_dom(
+                uri="ui://test/error",
+                html=None,
+                remote_dom={"type": "text"},
+                text_summary="Error test",
+                ui_format=UIFormat.HTML,
+            )
+
+    def test_remote_dom_missing_for_remote_dom_format_raises_error(self):
+        """Test that missing Remote DOM raises ValueError for Remote DOM format."""
+        from toolbridge_mcp.ui.resources import build_ui_with_text_and_dom, UIFormat
+
+        with pytest.raises(ValueError, match="remote_dom must be provided"):
+            build_ui_with_text_and_dom(
+                uri="ui://test/error",
+                html="<p>HTML</p>",
+                remote_dom=None,
+                text_summary="Error test",
+                ui_format=UIFormat.REMOTE_DOM,
+            )
+
+    def test_remote_dom_json_serialization(self):
+        """Test that Remote DOM is correctly JSON serialized."""
+        from toolbridge_mcp.ui.resources import build_ui_with_text_and_dom, UIFormat
+        import json
+
+        dom = {
+            "type": "column",
+            "props": {"gap": 12},
+            "children": [
+                {"type": "text", "props": {"text": "Hello World"}},
+            ],
+        }
+        result = build_ui_with_text_and_dom(
+            uri="ui://test/json",
+            html=None,
+            remote_dom=dom,
+            text_summary="JSON test",
+            ui_format=UIFormat.REMOTE_DOM,
+        )
+
+        # Parse the JSON to verify structure
+        parsed = json.loads(result[1].resource.text)
+        assert parsed["type"] == "column"
+        assert parsed["props"]["gap"] == 12
+        assert len(parsed["children"]) == 1
+        assert parsed["children"][0]["props"]["text"] == "Hello World"
+
+    def test_uri_preserved_in_remote_dom_resource(self):
+        """Test that URI is correctly set in Remote DOM resource."""
+        from toolbridge_mcp.ui.resources import build_ui_with_text_and_dom, UIFormat
+
+        test_uri = "ui://toolbridge/notes/list"
+        result = build_ui_with_text_and_dom(
+            uri=test_uri,
+            html=None,
+            remote_dom={"type": "text"},
+            text_summary="URI test",
+            ui_format=UIFormat.REMOTE_DOM,
+        )
+
+        assert str(result[1].resource.uri) == test_uri
