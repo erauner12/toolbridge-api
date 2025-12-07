@@ -114,10 +114,11 @@ async def show_note_ui(
     # Generate HTML using templates
     html = notes_templates.render_note_detail_html(note)
 
-    # Human-readable summary
-    title = note.payload.get("title", "Untitled note")
-    content_preview = note.payload.get("content", "")[:100]
-    if len(note.payload.get("content", "")) > 100:
+    # Human-readable summary (guard against null values)
+    title = note.payload.get("title") or "Untitled note"
+    content = note.payload.get("content") or ""
+    content_preview = content[:100]
+    if len(content) > 100:
         content_preview += "..."
 
     summary = f"Note: {title}\n\n{content_preview}\n\n(UID: {uid}, version: {note.version})"

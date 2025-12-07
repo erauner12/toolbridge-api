@@ -117,12 +117,13 @@ async def show_task_ui(
     # Generate HTML using templates
     html = tasks_templates.render_task_detail_html(task)
 
-    # Human-readable summary
-    title = task.payload.get("title", "Untitled task")
-    status = task.payload.get("status", "unknown")
-    priority = task.payload.get("priority", "")
-    description = task.payload.get("description", "")[:100]
-    if len(task.payload.get("description", "")) > 100:
+    # Human-readable summary (guard against null values)
+    title = task.payload.get("title") or "Untitled task"
+    status = task.payload.get("status") or "unknown"
+    priority = task.payload.get("priority") or ""
+    description_raw = task.payload.get("description") or ""
+    description = description_raw[:100]
+    if len(description_raw) > 100:
         description += "..."
 
     summary = f"Task: {title}\nStatus: {status}"
