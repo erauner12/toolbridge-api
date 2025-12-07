@@ -203,7 +203,10 @@ def render_notes_list_html(
 
             // View note details
             function viewNote(noteUid) {{
-                callTool('show_note_ui', {{ uid: noteUid }});
+                callTool('show_note_ui', {{
+                    uid: noteUid,
+                    include_deleted: LIST_CONTEXT.include_deleted
+                }});
             }}
 
             // Delete a note - uses UI tool for interactive response

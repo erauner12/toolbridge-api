@@ -253,7 +253,10 @@ def render_tasks_list_html(
 
             // View task details
             function viewTask(taskUid) {{
-                callTool('show_task_ui', {{ uid: taskUid }});
+                callTool('show_task_ui', {{
+                    uid: taskUid,
+                    include_deleted: LIST_CONTEXT.include_deleted
+                }});
             }}
 
             // Complete a task (mark as done) - uses UI tool for interactive response
