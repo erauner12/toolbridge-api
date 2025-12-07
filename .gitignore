@@ -58,3 +58,4 @@ uv.lock
 dist/
 build/
 mcp/.env.bak
+mcp/nanobot.db
