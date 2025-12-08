@@ -306,3 +306,21 @@ class TestBuildUIWithTextAndDom:
         )
 
         assert str(result[1].resource.uri) == test_uri
+
+    def test_remote_dom_has_metadata_fields(self):
+        """Test that Remote DOM resources include the same metadata as HTML resources."""
+        from toolbridge_mcp.ui.resources import build_ui_with_text_and_dom, UIFormat
+
+        result = build_ui_with_text_and_dom(
+            uri="ui://test/metadata",
+            html=None,
+            remote_dom={"type": "text", "props": {"text": "Hello"}},
+            text_summary="Metadata test",
+            ui_format=UIFormat.REMOTE_DOM,
+        )
+
+        resource = result[1].resource
+        # Verify metadata fields match HTML resources for host compatibility
+        assert resource.uiMetadata == {"preferred-frame-size": ["100%", "100%"]}
+        assert resource.metadata == {"ai.nanobot.meta/workspace": True}
+        assert resource.encoding == "text"

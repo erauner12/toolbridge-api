@@ -64,12 +64,20 @@ def _build_remote_dom_resource(uri: str, dom: Dict[str, Any]) -> EmbeddedResourc
     """
     dom_json = json.dumps(dom, separators=(",", ":"))
 
+    # Include same metadata fields as HTML resources for host compatibility
     return EmbeddedResource(
         type="resource",
         resource={
             "uri": uri,
             "mimeType": "application/vnd.mcp-ui.remote-dom",
             "text": dom_json,
+            "uiMetadata": {
+                "preferred-frame-size": ["100%", "100%"],
+            },
+            "metadata": {
+                "ai.nanobot.meta/workspace": True,
+            },
+            "encoding": "text",
         },
     )
 
