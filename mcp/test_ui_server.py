@@ -98,6 +98,18 @@ def get_mock_tasks():
     return [Task(**t) for t in mock_state["tasks"] if t.get("deletedAt") is None]
 
 
+def validate_ui_format(ui_format: str) -> UIFormat:
+    """Validate and convert ui_format string to UIFormat enum.
+
+    Returns UIFormat.HTML as default for invalid values to keep test server resilient.
+    """
+    try:
+        return UIFormat(ui_format)
+    except ValueError:
+        logger.warning(f"Invalid ui_format '{ui_format}', defaulting to 'html'")
+        return UIFormat.HTML
+
+
 @mcp.tool()
 async def list_notes_ui(
     limit: int = 20,
@@ -112,19 +124,20 @@ async def list_notes_ui(
     Returns both text fallback and interactive UI.
     """
     notes = get_mock_notes()[:limit]
+    fmt = validate_ui_format(ui_format)
 
     html = None
     remote_dom = None
 
-    if ui_format in ("html", "both"):
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
         html = notes_templates.render_notes_list_html(notes)
 
-    if ui_format in ("remote-dom", "both"):
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
         remote_dom = notes_dom_templates.render_notes_list_dom(
             notes,
             limit=limit,
             include_deleted=False,
-            ui_format=ui_format,
+            ui_format=fmt.value,
         )
 
     return build_ui_with_text_and_dom(
@@ -132,7 +145,7 @@ async def list_notes_ui(
         html=html,
         remote_dom=remote_dom,
         text_summary=f"Displaying {len(notes)} note(s)",
-        ui_format=UIFormat(ui_format),
+        ui_format=fmt,
     )
 
 
@@ -154,15 +167,16 @@ async def show_note_ui(
     # Find note by uid and convert to Pydantic model
     notes = get_mock_notes()
     note = next((n for n in notes if n.uid == uid), notes[0])
+    fmt = validate_ui_format(ui_format)
 
     html = None
     remote_dom = None
 
-    if ui_format in ("html", "both"):
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
         html = notes_templates.render_note_detail_html(note)
 
-    if ui_format in ("remote-dom", "both"):
-        remote_dom = notes_dom_templates.render_note_detail_dom(note, ui_format=ui_format)
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+        remote_dom = notes_dom_templates.render_note_detail_dom(note, ui_format=fmt.value)
 
     title = note.payload.get("title", "Note")
     return build_ui_with_text_and_dom(
@@ -170,7 +184,7 @@ async def show_note_ui(
         html=html,
         remote_dom=remote_dom,
         text_summary=f"Note: {title}",
-        ui_format=UIFormat(ui_format),
+        ui_format=fmt,
     )
 
 
@@ -188,19 +202,20 @@ async def list_tasks_ui(
     Returns both text fallback and interactive UI with status icons.
     """
     tasks = get_mock_tasks()[:limit]
+    fmt = validate_ui_format(ui_format)
 
     html = None
     remote_dom = None
 
-    if ui_format in ("html", "both"):
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
         html = tasks_templates.render_tasks_list_html(tasks)
 
-    if ui_format in ("remote-dom", "both"):
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
         remote_dom = tasks_dom_templates.render_tasks_list_dom(
             tasks,
             limit=limit,
             include_deleted=False,
-            ui_format=ui_format,
+            ui_format=fmt.value,
         )
 
     return build_ui_with_text_and_dom(
@@ -208,7 +223,7 @@ async def list_tasks_ui(
         html=html,
         remote_dom=remote_dom,
         text_summary=f"Displaying {len(tasks)} task(s)",
-        ui_format=UIFormat(ui_format),
+        ui_format=fmt,
     )
 
 
@@ -230,15 +245,16 @@ async def show_task_ui(
     # Find task by uid and convert to Pydantic model
     tasks = get_mock_tasks()
     task = next((t for t in tasks if t.uid == uid), tasks[0])
+    fmt = validate_ui_format(ui_format)
 
     html = None
     remote_dom = None
 
-    if ui_format in ("html", "both"):
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
         html = tasks_templates.render_task_detail_html(task)
 
-    if ui_format in ("remote-dom", "both"):
-        remote_dom = tasks_dom_templates.render_task_detail_dom(task, ui_format=ui_format)
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+        remote_dom = tasks_dom_templates.render_task_detail_dom(task, ui_format=fmt.value)
 
     title = task.payload.get("title", "Task")
     return build_ui_with_text_and_dom(
@@ -246,7 +262,7 @@ async def show_task_ui(
         html=html,
         remote_dom=remote_dom,
         text_summary=f"Task: {title}",
-        ui_format=UIFormat(ui_format),
+        ui_format=fmt,
     )
 
 
@@ -283,19 +299,20 @@ async def delete_note_ui(
 
     # Return updated notes list
     notes = get_mock_notes()[:limit]
+    fmt = validate_ui_format(ui_format)
 
     html = None
     remote_dom = None
 
-    if ui_format in ("html", "both"):
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
         html = notes_templates.render_notes_list_html(notes, limit=limit, include_deleted=include_deleted)
 
-    if ui_format in ("remote-dom", "both"):
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
         remote_dom = notes_dom_templates.render_notes_list_dom(
             notes,
             limit=limit,
             include_deleted=include_deleted,
-            ui_format=ui_format,
+            ui_format=fmt.value,
         )
 
     return build_ui_with_text_and_dom(
@@ -303,7 +320,7 @@ async def delete_note_ui(
         html=html,
         remote_dom=remote_dom,
         text_summary=f"Deleted '{note_title}' - {len(notes)} note(s) remaining",
-        ui_format=UIFormat(ui_format),
+        ui_format=fmt,
     )
 
 
@@ -342,19 +359,20 @@ async def process_task_ui(
 
     # Return updated tasks list
     tasks = get_mock_tasks()[:limit]
+    fmt = validate_ui_format(ui_format)
 
     html = None
     remote_dom = None
 
-    if ui_format in ("html", "both"):
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
         html = tasks_templates.render_tasks_list_html(tasks, limit=limit, include_deleted=include_deleted)
 
-    if ui_format in ("remote-dom", "both"):
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
         remote_dom = tasks_dom_templates.render_tasks_list_dom(
             tasks,
             limit=limit,
             include_deleted=include_deleted,
-            ui_format=ui_format,
+            ui_format=fmt.value,
         )
 
     action_text = {"complete": "Done", "start": "Started", "reopen": "Reopened"}.get(action, action.capitalize())
@@ -363,7 +381,7 @@ async def process_task_ui(
         html=html,
         remote_dom=remote_dom,
         text_summary=f"{action_text} '{task_title}' - {len(tasks)} task(s) total",
-        ui_format=UIFormat(ui_format),
+        ui_format=fmt,
     )
 
 
@@ -396,19 +414,20 @@ async def archive_task_ui(
 
     # Return updated tasks list
     tasks = get_mock_tasks()[:limit]
+    fmt = validate_ui_format(ui_format)
 
     html = None
     remote_dom = None
 
-    if ui_format in ("html", "both"):
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
         html = tasks_templates.render_tasks_list_html(tasks, limit=limit, include_deleted=include_deleted)
 
-    if ui_format in ("remote-dom", "both"):
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
         remote_dom = tasks_dom_templates.render_tasks_list_dom(
             tasks,
             limit=limit,
             include_deleted=include_deleted,
-            ui_format=ui_format,
+            ui_format=fmt.value,
         )
 
     return build_ui_with_text_and_dom(
@@ -416,7 +435,7 @@ async def archive_task_ui(
         html=html,
         remote_dom=remote_dom,
         text_summary=f"Archived '{task_title}' - {len(tasks)} task(s) remaining",
-        ui_format=UIFormat(ui_format),
+        ui_format=fmt,
     )
 
 
