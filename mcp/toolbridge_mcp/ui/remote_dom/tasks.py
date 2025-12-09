@@ -253,13 +253,35 @@ def render_task_detail_dom(
         tag_chips = [chip_node(str(tag), ChipVariant.OUTLINED, Icon.TAG) for tag in tags]
         children.append(wrap_node(tag_chips, Spacing.GAP_SM, Spacing.GAP_XS))
 
-    # Description card
+    # Description card - expanded for editor-like feel
     children.append(
         {
             "type": "card",
-            "props": {"padding": Spacing.PADDING_CARD},
+            "props": {
+                "padding": 24,  # More generous padding for content area
+            },
             "children": [
-                text_node(description, TextStyle.BODY_MEDIUM),
+                {
+                    "type": "column",
+                    "props": {
+                        "gap": Spacing.GAP_MD,
+                        "crossAxisAlignment": "stretch",
+                    },
+                    "children": [
+                        # Description label
+                        text_node("Description", TextStyle.LABEL_MEDIUM, Color.ON_SURFACE_VARIANT),
+                        # Description text with room to breathe
+                        {
+                            "type": "container",
+                            "props": {
+                                "padding": {"top": 8, "bottom": 16},
+                            },
+                            "children": [
+                                text_node(description, TextStyle.BODY_LARGE),
+                            ],
+                        },
+                    ],
+                },
             ],
         }
     )
@@ -273,10 +295,12 @@ def render_task_detail_dom(
         text_node("  |  ".join(meta_parts), TextStyle.CAPTION, Color.ON_SURFACE_VARIANT)
     )
 
-    # Build root props - only include maxWidth if set
+    # Build root props for detail view - full width, generous padding
     root_props = {
-        "gap": Spacing.LIST_GAP,
-        "padding": Spacing.PADDING_CONTAINER,
+        "gap": Spacing.SECTION_GAP,  # Larger gap for detail sections
+        "padding": 24,  # More generous outer padding
+        "fullWidth": True,  # Expand to fill available space
+        "crossAxisAlignment": "stretch",  # Stretch children to full width
     }
     if Layout.MAX_WIDTH_DETAIL is not None:
         root_props["maxWidth"] = Layout.MAX_WIDTH_DETAIL
