@@ -376,8 +376,12 @@ class TestNotesRemoteDomTemplates:
         dom = render_notes_list_dom([note], ui_format="remote-dom")
 
         card = dom["children"][2]
-        # Find the row with buttons (last child of card)
-        button_row = card["children"][-1]
+        # Card now wraps content in a nested column child
+        inner_column = card["children"][0]
+        assert inner_column["type"] == "column"
+
+        # Find the row with buttons (last child of inner column)
+        button_row = inner_column["children"][-1]
         assert button_row["type"] == "row"
 
         buttons = button_row["children"]
@@ -405,8 +409,10 @@ class TestNotesRemoteDomTemplates:
         dom = render_notes_list_dom([note])
 
         card = dom["children"][2]
-        # Second child is content preview
-        content_text = card["children"][1]
+        # Card wraps content in a nested column child
+        inner_column = card["children"][0]
+        # Second child of inner column is content preview
+        content_text = inner_column["children"][1]
         assert content_text["props"]["text"].endswith("...")
         assert len(content_text["props"]["text"]) <= 103  # 100 + "..."
 
@@ -440,17 +446,17 @@ class TestNotesRemoteDomTemplates:
 
         dom = render_note_detail_dom(note)
 
-        # Find tags row (should be a row with container children)
-        tags_row = None
+        # Find tags wrap node (should be a wrap with chip children)
+        tags_wrap = None
         for child in dom["children"]:
-            if child["type"] == "row" and child.get("children"):
+            if child["type"] == "wrap" and child.get("children"):
                 first_child = child["children"][0]
-                if first_child.get("type") == "container":
-                    tags_row = child
+                if first_child.get("type") == "chip":
+                    tags_wrap = child
                     break
 
-        assert tags_row is not None
-        assert len(tags_row["children"]) == 2
+        assert tags_wrap is not None
+        assert len(tags_wrap["children"]) == 2
 
 
 class TestTasksRemoteDomTemplates:
@@ -522,7 +528,9 @@ class TestTasksRemoteDomTemplates:
         dom = render_tasks_list_dom([task], ui_format="remote-dom")
 
         card = dom["children"][2]
-        button_row = card["children"][-1]
+        # Card wraps content in a nested column child
+        inner_column = card["children"][0]
+        button_row = inner_column["children"][-1]
         buttons = button_row["children"]
 
         # Second button should be Complete
@@ -540,7 +548,9 @@ class TestTasksRemoteDomTemplates:
         dom = render_tasks_list_dom([task], ui_format="remote-dom")
 
         card = dom["children"][2]
-        button_row = card["children"][-1]
+        # Card wraps content in a nested column child
+        inner_column = card["children"][0]
+        button_row = inner_column["children"][-1]
         buttons = button_row["children"]
 
         # Second button should be Archive
@@ -549,7 +559,7 @@ class TestTasksRemoteDomTemplates:
         assert action_btn["action"]["payload"]["toolName"] == "archive_task_ui"
 
     def test_render_tasks_list_dom_includes_metadata(self):
-        """Test that task metadata (status, priority, due date) is shown."""
+        """Test that task metadata (status, priority, due date) is shown as chips."""
         from toolbridge_mcp.ui.remote_dom.tasks import render_tasks_list_dom
 
         task = self._create_mock_task(
@@ -561,11 +571,27 @@ class TestTasksRemoteDomTemplates:
         dom = render_tasks_list_dom([task])
 
         card = dom["children"][2]
-        # Find the meta text (third child should be caption style)
-        meta_text = card["children"][2]
-        assert "Status: In Progress" in meta_text["props"]["text"]
-        assert "Priority: high" in meta_text["props"]["text"]
-        assert "Due: 2025-12-31" in meta_text["props"]["text"]
+        # Card wraps content in a nested column child
+        inner_column = card["children"][0]
+
+        # Find the metadata wrap node (should contain chips)
+        meta_wrap = None
+        for child in inner_column["children"]:
+            if child["type"] == "wrap" and child.get("children"):
+                first_child = child["children"][0]
+                if first_child.get("type") == "chip":
+                    meta_wrap = child
+                    break
+
+        assert meta_wrap is not None
+        # Should have 3 chips: status, priority, due date
+        assert len(meta_wrap["children"]) == 3
+
+        # Check chip labels contain expected text
+        chip_labels = [c["props"]["label"] for c in meta_wrap["children"]]
+        assert any("In Progress" in label for label in chip_labels)
+        assert any("Priority: high" in label for label in chip_labels)
+        assert any("Due: 2025-12-31" in label for label in chip_labels)
 
     def test_render_task_detail_dom_structure(self):
         """Test rendering a single task detail view."""
@@ -587,38 +613,51 @@ class TestTasksRemoteDomTemplates:
         assert len(dom["children"]) >= 4
 
     def test_render_task_detail_dom_includes_priority(self):
-        """Test that priority is shown in detail view."""
+        """Test that priority is shown in detail view as a chip."""
         from toolbridge_mcp.ui.remote_dom.tasks import render_task_detail_dom
 
         task = self._create_mock_task(priority="high")
 
         dom = render_task_detail_dom(task)
 
-        # Find priority text
+        # Find priority chip in metadata wrap
         priority_found = False
         for child in dom["children"]:
-            if child["type"] == "text" and "Priority: high" in child["props"].get("text", ""):
-                priority_found = True
-                break
+            if child["type"] == "wrap" and child.get("children"):
+                for chip in child["children"]:
+                    if chip["type"] == "chip":
+                        label = chip["props"].get("label", "")
+                        if "Priority: high" in label:
+                            priority_found = True
+                            break
+                if priority_found:
+                    break
 
         assert priority_found
 
     def test_render_task_detail_dom_includes_tags(self):
-        """Test that tags are included in detail view."""
+        """Test that tags are included in detail view as chips."""
         from toolbridge_mcp.ui.remote_dom.tasks import render_task_detail_dom
 
         task = self._create_mock_task(tags=["sprint-1", "backend"])
 
         dom = render_task_detail_dom(task)
 
-        # Find tags row
-        tags_row = None
-        for child in dom["children"]:
-            if child["type"] == "row" and child.get("children"):
-                first_child = child["children"][0]
-                if first_child.get("type") == "container":
-                    tags_row = child
-                    break
+        # Find tags wrap node (second wrap - first is metadata chips)
+        # Task detail has: header row, metadata wrap, tags wrap, description card, UID text
+        tag_wraps = [
+            child for child in dom["children"]
+            if child["type"] == "wrap" and child.get("children")
+        ]
 
-        assert tags_row is not None
-        assert len(tags_row["children"]) == 2
+        # Should have at least 2 wrap nodes (metadata + tags)
+        assert len(tag_wraps) >= 2
+
+        # Second wrap should be tags with 2 chips
+        tags_wrap = tag_wraps[1]
+        assert len(tags_wrap["children"]) == 2
+
+        # Verify they're tag chips
+        tag_labels = [c["props"]["label"] for c in tags_wrap["children"]]
+        assert "sprint-1" in tag_labels
+        assert "backend" in tag_labels
