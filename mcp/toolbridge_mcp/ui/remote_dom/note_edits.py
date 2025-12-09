@@ -147,11 +147,21 @@ def render_note_edit_diff_dom(
     }
 
 
+# GitHub-style diff colors (hex)
+# These work well in both light and dark modes
+DIFF_ADDED_BG = "#1c4428"      # Dark green background
+DIFF_ADDED_TEXT = "#3fb950"    # Bright green text
+DIFF_REMOVED_BG = "#5c1a1b"    # Dark red background
+DIFF_REMOVED_TEXT = "#f85149"  # Bright red text
+DIFF_CONTEXT_BG = "#21262d"    # Dark gray background
+DIFF_CONTEXT_TEXT = "#8b949e"  # Gray text
+
+
 def _render_diff_line(text: str, is_added: bool) -> Dict[str, Any]:
     """Render a single diff line with +/- prefix (GitHub-style)."""
     prefix = "+ " if is_added else "- "
-    color = Color.ON_PRIMARY_CONTAINER if is_added else Color.ON_ERROR_CONTAINER
-    bg_color = Color.PRIMARY_CONTAINER if is_added else Color.ERROR_CONTAINER
+    text_color = DIFF_ADDED_TEXT if is_added else DIFF_REMOVED_TEXT
+    bg_color = DIFF_ADDED_BG if is_added else DIFF_REMOVED_BG
 
     return {
         "type": "container",
@@ -165,7 +175,7 @@ def _render_diff_line(text: str, is_added: bool) -> Dict[str, Any]:
                 "props": {
                     "text": f"{prefix}{text}",
                     "style": TextStyle.BODY_SMALL,
-                    "color": color,
+                    "color": text_color,
                 },
             },
         ],
@@ -178,7 +188,7 @@ def _render_context_line(text: str) -> Dict[str, Any]:
         "type": "container",
         "props": {
             "padding": 8,
-            "color": Color.SURFACE_CONTAINER_LOW,
+            "color": DIFF_CONTEXT_BG,
         },
         "children": [
             {
@@ -186,7 +196,7 @@ def _render_context_line(text: str) -> Dict[str, Any]:
                 "props": {
                     "text": f"  {text}",
                     "style": TextStyle.BODY_SMALL,
-                    "color": Color.ON_SURFACE_VARIANT,
+                    "color": DIFF_CONTEXT_TEXT,
                 },
             },
         ],
@@ -206,9 +216,9 @@ def _render_diff_hunk(hunk: "DiffHunk") -> Dict[str, Any] | None:
                 _render_context_line(lines[0]),
                 {
                     "type": "container",
-                    "props": {"padding": 4, "color": Color.SURFACE_CONTAINER_LOW},
+                    "props": {"padding": 4, "color": DIFF_CONTEXT_BG},
                     "children": [
-                        text_node(f"  ... ({len(lines) - 2} more lines)", TextStyle.BODY_SMALL, Color.ON_SURFACE_VARIANT),
+                        text_node(f"  ... ({len(lines) - 2} more lines)", TextStyle.BODY_SMALL, DIFF_CONTEXT_TEXT),
                     ],
                 },
                 _render_context_line(lines[-1]),
