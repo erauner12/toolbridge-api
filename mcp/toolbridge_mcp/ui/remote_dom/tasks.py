@@ -85,6 +85,7 @@ def render_tasks_list_dom(
         status = task.payload.get("status") or "todo"
         priority = task.payload.get("priority") or ""
         due_date = task.payload.get("dueDate") or ""
+        tags = task.payload.get("tags") or []
 
         # Build card children
         card_children: List[Dict[str, Any]] = [
@@ -108,6 +109,11 @@ def render_tasks_list_dom(
 
         # Add metadata chips in a wrap layout
         card_children.append(wrap_node(meta_chips, Spacing.GAP_SM, Spacing.GAP_XS))
+
+        # Add tags as chips in a wrap layout
+        if tags:
+            tag_chips = [chip_node(str(tag), ChipVariant.OUTLINED, Icon.TAG) for tag in tags]
+            card_children.append(wrap_node(tag_chips, Spacing.GAP_SM, Spacing.GAP_XS))
 
         # Choose button label based on status
         if status == "done":
