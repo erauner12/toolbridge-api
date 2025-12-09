@@ -141,13 +141,17 @@ def render_notes_list_dom(
             }
         )
 
+    # Build root props - only include maxWidth if set
+    root_props = {
+        "gap": Spacing.LIST_GAP,
+        "padding": Spacing.PADDING_CONTAINER,
+    }
+    if Layout.MAX_WIDTH_LIST is not None:
+        root_props["maxWidth"] = Layout.MAX_WIDTH_LIST
+
     return {
         "type": "column",
-        "props": {
-            "gap": Spacing.LIST_GAP,
-            "padding": Spacing.PADDING_CONTAINER,
-            "maxWidth": Layout.MAX_WIDTH_LIST,
-        },
+        "props": root_props,
         "children": header_children + cards,
     }
 
@@ -208,12 +212,16 @@ def render_note_detail_dom(
         }
     )
 
+    # Build root props - only include maxWidth if set
+    root_props = {
+        "gap": Spacing.LIST_GAP,
+        "padding": Spacing.PADDING_CONTAINER,
+    }
+    if Layout.MAX_WIDTH_DETAIL is not None:
+        root_props["maxWidth"] = Layout.MAX_WIDTH_DETAIL
+
     return {
         "type": "column",
-        "props": {
-            "gap": Spacing.LIST_GAP,
-            "padding": Spacing.PADDING_CONTAINER,
-            "maxWidth": Layout.MAX_WIDTH_DETAIL,
-        },
+        "props": root_props,
         "children": children,
     }

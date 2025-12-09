@@ -60,20 +60,20 @@ class Spacing:
     # Common gaps
     GAP_XS = 4      # Extra small gap
     GAP_SM = 8      # Small gap
-    GAP_MD = 12     # Medium gap (default list gap)
+    GAP_MD = 12     # Medium gap
     GAP_LG = 16     # Large gap
     GAP_XL = 24     # Extra large gap
     
     # Padding presets
-    PADDING_CARD = 16
+    PADDING_CARD = 20        # Increased for more breathing room
     PADDING_LIST_ITEM = 16
-    PADDING_CONTAINER = 16
+    PADDING_CONTAINER = 20   # Increased for outer container
     PADDING_CHIP = {"left": 8, "right": 8, "top": 4, "bottom": 4}
     
     # Layout defaults
-    LIST_GAP = 12
-    CARD_GAP = 12
-    SECTION_GAP = 16
+    LIST_GAP = 16            # Increased gap between list items
+    CARD_GAP = 16
+    SECTION_GAP = 20
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -84,9 +84,10 @@ class Layout:
     """Layout constraints and defaults."""
     
     # Max widths for different view types
-    MAX_WIDTH_LIST = 640
-    MAX_WIDTH_DETAIL = 640
-    MAX_WIDTH_CARD = 600
+    # Use None to allow full width, or set a value like 800 for wide layouts
+    MAX_WIDTH_LIST = None  # Full width for lists
+    MAX_WIDTH_DETAIL = None  # Full width for details
+    MAX_WIDTH_CARD = 800
     
     # Default chat framing metadata
     CHAT_FRAME_CARD = "card"

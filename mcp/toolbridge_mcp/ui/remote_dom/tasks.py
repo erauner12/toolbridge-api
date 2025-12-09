@@ -188,13 +188,17 @@ def render_tasks_list_dom(
             }
         )
 
+    # Build root props - only include maxWidth if set
+    root_props = {
+        "gap": Spacing.LIST_GAP,
+        "padding": Spacing.PADDING_CONTAINER,
+    }
+    if Layout.MAX_WIDTH_LIST is not None:
+        root_props["maxWidth"] = Layout.MAX_WIDTH_LIST
+
     return {
         "type": "column",
-        "props": {
-            "gap": Spacing.LIST_GAP,
-            "padding": Spacing.PADDING_CONTAINER,
-            "maxWidth": Layout.MAX_WIDTH_LIST,
-        },
+        "props": root_props,
         "children": header + cards,
     }
 
@@ -269,12 +273,16 @@ def render_task_detail_dom(
         text_node("  |  ".join(meta_parts), TextStyle.CAPTION, Color.ON_SURFACE_VARIANT)
     )
 
+    # Build root props - only include maxWidth if set
+    root_props = {
+        "gap": Spacing.LIST_GAP,
+        "padding": Spacing.PADDING_CONTAINER,
+    }
+    if Layout.MAX_WIDTH_DETAIL is not None:
+        root_props["maxWidth"] = Layout.MAX_WIDTH_DETAIL
+
     return {
         "type": "column",
-        "props": {
-            "gap": Spacing.LIST_GAP,
-            "padding": Spacing.PADDING_CONTAINER,
-            "maxWidth": Layout.MAX_WIDTH_DETAIL,
-        },
+        "props": root_props,
         "children": children,
     }
