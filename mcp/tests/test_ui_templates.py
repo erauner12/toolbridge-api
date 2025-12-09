@@ -300,3 +300,325 @@ class TestTasksTemplates:
         html = render_task_detail_html(task)
 
         assert "onclick=" not in html or escape(xss_desc) in html
+
+
+# ============================================================
+# Remote DOM Templates Tests
+# ============================================================
+
+
+class TestNotesRemoteDomTemplates:
+    """Test suite for notes Remote DOM templates."""
+
+    def _create_mock_note(
+        self,
+        uid: str = "test-uid-123",
+        version: int = 1,
+        title: str = "Test Note",
+        content: str = "Test content",
+        tags: list = None,
+        status: str = None,
+        updated_at: str = "2025-01-01T00:00:00Z",
+        deleted_at: str = None,
+    ):
+        """Create a mock Note object for testing."""
+        note = MagicMock()
+        note.uid = uid
+        note.version = version
+        note.updated_at = updated_at
+        note.deleted_at = deleted_at
+        note.payload = {
+            "title": title,
+            "content": content,
+        }
+        if tags:
+            note.payload["tags"] = tags
+        if status:
+            note.payload["status"] = status
+        return note
+
+    def test_render_notes_list_dom_empty(self):
+        """Test rendering empty notes list returns column with header."""
+        from toolbridge_mcp.ui.remote_dom.notes import render_notes_list_dom
+
+        dom = render_notes_list_dom([])
+
+        assert dom["type"] == "column"
+        assert "children" in dom
+        # Should have header children but no cards
+        assert len(dom["children"]) == 2  # header row + count text
+
+    def test_render_notes_list_dom_single_note(self):
+        """Test rendering a single note in list."""
+        from toolbridge_mcp.ui.remote_dom.notes import render_notes_list_dom
+
+        note = self._create_mock_note(
+            uid="abc123",
+            title="My Note",
+            content="Some content here",
+        )
+
+        dom = render_notes_list_dom([note])
+
+        assert dom["type"] == "column"
+        # Should have header (2 children) + 1 card
+        assert len(dom["children"]) == 3
+        # Third child should be a card
+        card = dom["children"][2]
+        assert card["type"] == "card"
+
+    def test_render_notes_list_dom_has_action_buttons(self):
+        """Test that note cards have View and Delete action buttons."""
+        from toolbridge_mcp.ui.remote_dom.notes import render_notes_list_dom
+
+        note = self._create_mock_note(uid="note-123")
+
+        dom = render_notes_list_dom([note], ui_format="remote-dom")
+
+        card = dom["children"][2]
+        # Find the row with buttons (last child of card)
+        button_row = card["children"][-1]
+        assert button_row["type"] == "row"
+
+        buttons = button_row["children"]
+        assert len(buttons) == 2
+
+        # View button
+        view_btn = buttons[0]
+        assert view_btn["props"]["label"] == "View"
+        assert view_btn["action"]["payload"]["toolName"] == "show_note_ui"
+        assert view_btn["action"]["payload"]["params"]["uid"] == "note-123"
+        assert view_btn["action"]["payload"]["params"]["ui_format"] == "remote-dom"
+
+        # Delete button
+        delete_btn = buttons[1]
+        assert delete_btn["props"]["label"] == "Delete"
+        assert delete_btn["action"]["payload"]["toolName"] == "delete_note_ui"
+
+    def test_render_notes_list_dom_truncates_long_content(self):
+        """Test that long content is truncated with ellipsis."""
+        from toolbridge_mcp.ui.remote_dom.notes import render_notes_list_dom
+
+        long_content = "A" * 150
+        note = self._create_mock_note(content=long_content)
+
+        dom = render_notes_list_dom([note])
+
+        card = dom["children"][2]
+        # Second child is content preview
+        content_text = card["children"][1]
+        assert content_text["props"]["text"].endswith("...")
+        assert len(content_text["props"]["text"]) <= 103  # 100 + "..."
+
+    def test_render_note_detail_dom_structure(self):
+        """Test rendering a single note detail view."""
+        from toolbridge_mcp.ui.remote_dom.notes import render_note_detail_dom
+
+        note = self._create_mock_note(
+            uid="detail-uid-456",
+            version=3,
+            title="Detailed Note",
+            content="Full content goes here",
+            tags=["important", "work"],
+        )
+
+        dom = render_note_detail_dom(note)
+
+        assert dom["type"] == "column"
+        # Should have header row, metadata, tags row, content card
+        assert len(dom["children"]) >= 3
+
+        # First child is header row with icon and title
+        header = dom["children"][0]
+        assert header["type"] == "row"
+
+    def test_render_note_detail_dom_includes_tags(self):
+        """Test that tags are included in detail view."""
+        from toolbridge_mcp.ui.remote_dom.notes import render_note_detail_dom
+
+        note = self._create_mock_note(tags=["tag1", "tag2"])
+
+        dom = render_note_detail_dom(note)
+
+        # Find tags row (should be a row with container children)
+        tags_row = None
+        for child in dom["children"]:
+            if child["type"] == "row" and child.get("children"):
+                first_child = child["children"][0]
+                if first_child.get("type") == "container":
+                    tags_row = child
+                    break
+
+        assert tags_row is not None
+        assert len(tags_row["children"]) == 2
+
+
+class TestTasksRemoteDomTemplates:
+    """Test suite for tasks Remote DOM templates."""
+
+    def _create_mock_task(
+        self,
+        uid: str = "task-uid-123",
+        version: int = 1,
+        title: str = "Test Task",
+        description: str = "Test description",
+        status: str = "todo",
+        priority: str = None,
+        due_date: str = None,
+        tags: list = None,
+        updated_at: str = "2025-01-01T00:00:00Z",
+        deleted_at: str = None,
+    ):
+        """Create a mock Task object for testing."""
+        task = MagicMock()
+        task.uid = uid
+        task.version = version
+        task.updated_at = updated_at
+        task.deleted_at = deleted_at
+        task.payload = {
+            "title": title,
+            "description": description,
+            "status": status,
+        }
+        if priority:
+            task.payload["priority"] = priority
+        if due_date:
+            task.payload["dueDate"] = due_date
+        if tags:
+            task.payload["tags"] = tags
+        return task
+
+    def test_render_tasks_list_dom_empty(self):
+        """Test rendering empty tasks list returns column with header."""
+        from toolbridge_mcp.ui.remote_dom.tasks import render_tasks_list_dom
+
+        dom = render_tasks_list_dom([])
+
+        assert dom["type"] == "column"
+        assert "children" in dom
+        # Should have header children but no cards
+        assert len(dom["children"]) == 2
+
+    def test_render_tasks_list_dom_single_task(self):
+        """Test rendering a single task in list."""
+        from toolbridge_mcp.ui.remote_dom.tasks import render_tasks_list_dom
+
+        task = self._create_mock_task(uid="task123", title="My Task")
+
+        dom = render_tasks_list_dom([task])
+
+        assert dom["type"] == "column"
+        # Header (2) + 1 card
+        assert len(dom["children"]) == 3
+        card = dom["children"][2]
+        assert card["type"] == "card"
+
+    def test_render_tasks_list_dom_complete_button_for_non_done(self):
+        """Test that non-done tasks have Complete button."""
+        from toolbridge_mcp.ui.remote_dom.tasks import render_tasks_list_dom
+
+        task = self._create_mock_task(uid="task-1", status="in_progress")
+
+        dom = render_tasks_list_dom([task], ui_format="remote-dom")
+
+        card = dom["children"][2]
+        button_row = card["children"][-1]
+        buttons = button_row["children"]
+
+        # Second button should be Complete
+        action_btn = buttons[1]
+        assert action_btn["props"]["label"] == "Complete"
+        assert action_btn["action"]["payload"]["toolName"] == "process_task_ui"
+        assert action_btn["action"]["payload"]["params"]["action"] == "complete"
+
+    def test_render_tasks_list_dom_archive_button_for_done(self):
+        """Test that done tasks have Archive button."""
+        from toolbridge_mcp.ui.remote_dom.tasks import render_tasks_list_dom
+
+        task = self._create_mock_task(uid="task-done", status="done")
+
+        dom = render_tasks_list_dom([task], ui_format="remote-dom")
+
+        card = dom["children"][2]
+        button_row = card["children"][-1]
+        buttons = button_row["children"]
+
+        # Second button should be Archive
+        action_btn = buttons[1]
+        assert action_btn["props"]["label"] == "Archive"
+        assert action_btn["action"]["payload"]["toolName"] == "archive_task_ui"
+
+    def test_render_tasks_list_dom_includes_metadata(self):
+        """Test that task metadata (status, priority, due date) is shown."""
+        from toolbridge_mcp.ui.remote_dom.tasks import render_tasks_list_dom
+
+        task = self._create_mock_task(
+            status="in_progress",
+            priority="high",
+            due_date="2025-12-31T00:00:00Z",
+        )
+
+        dom = render_tasks_list_dom([task])
+
+        card = dom["children"][2]
+        # Find the meta text (third child should be caption style)
+        meta_text = card["children"][2]
+        assert "Status: In Progress" in meta_text["props"]["text"]
+        assert "Priority: high" in meta_text["props"]["text"]
+        assert "Due: 2025-12-31" in meta_text["props"]["text"]
+
+    def test_render_task_detail_dom_structure(self):
+        """Test rendering a single task detail view."""
+        from toolbridge_mcp.ui.remote_dom.tasks import render_task_detail_dom
+
+        task = self._create_mock_task(
+            uid="detail-task-789",
+            version=5,
+            title="Detailed Task",
+            description="Full task description here",
+            status="in_progress",
+            priority="medium",
+        )
+
+        dom = render_task_detail_dom(task)
+
+        assert dom["type"] == "column"
+        # Should have header row, status, priority, description card, UID
+        assert len(dom["children"]) >= 4
+
+    def test_render_task_detail_dom_includes_priority(self):
+        """Test that priority is shown in detail view."""
+        from toolbridge_mcp.ui.remote_dom.tasks import render_task_detail_dom
+
+        task = self._create_mock_task(priority="high")
+
+        dom = render_task_detail_dom(task)
+
+        # Find priority text
+        priority_found = False
+        for child in dom["children"]:
+            if child["type"] == "text" and "Priority: high" in child["props"].get("text", ""):
+                priority_found = True
+                break
+
+        assert priority_found
+
+    def test_render_task_detail_dom_includes_tags(self):
+        """Test that tags are included in detail view."""
+        from toolbridge_mcp.ui.remote_dom.tasks import render_task_detail_dom
+
+        task = self._create_mock_task(tags=["sprint-1", "backend"])
+
+        dom = render_task_detail_dom(task)
+
+        # Find tags row
+        tags_row = None
+        for child in dom["children"]:
+            if child["type"] == "row" and child.get("children"):
+                first_child = child["children"][0]
+                if first_child.get("type") == "container":
+                    tags_row = child
+                    break
+
+        assert tags_row is not None
+        assert len(tags_row["children"]) == 2

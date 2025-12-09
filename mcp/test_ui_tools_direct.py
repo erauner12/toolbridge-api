@@ -223,6 +223,78 @@ async def test_ui_tools():
                 assert "in_progress" in result[1].resource.text
                 logger.success("✓ show_task_ui renders task detail HTML")
 
+                # Test 5: Remote DOM format for notes
+                logger.info("5. Testing list_notes_ui with ui_format='remote-dom'...")
+                from toolbridge_mcp.ui.resources import build_ui_with_text_and_dom, UIFormat
+                from toolbridge_mcp.ui.remote_dom import notes as notes_dom_templates
+                from toolbridge_mcp.ui.remote_dom import tasks as tasks_dom_templates
+
+                notes_response = NotesListResponse(**MOCK_NOTES_LIST)
+                remote_dom = notes_dom_templates.render_notes_list_dom(
+                    notes_response.items,
+                    limit=20,
+                    include_deleted=False,
+                    ui_format="remote-dom",
+                )
+                result = build_ui_with_text_and_dom(
+                    uri="ui://toolbridge/notes/list",
+                    html=None,
+                    remote_dom=remote_dom,
+                    text_summary=f"Displaying {len(notes_response.items)} note(s)",
+                    ui_format=UIFormat.REMOTE_DOM,
+                )
+
+                assert len(result) == 2, f"Expected 2 content blocks for remote-dom, got {len(result)}"
+                assert result[0].type == "text", "First element should be TextContent"
+                assert result[1].type == "resource", "Second element should be UIResource"
+                assert result[1].resource.mimeType == "application/vnd.mcp-ui.remote-dom"
+                assert '"type":"column"' in result[1].resource.text or '"type":"text"' in result[1].resource.text
+                logger.success("✓ list_notes_ui with ui_format='remote-dom' returns Remote DOM resource")
+
+                # Test 6: BOTH format returns 3 elements
+                logger.info("6. Testing list_notes_ui with ui_format='both'...")
+                html = notes_templates.render_notes_list_html(notes_response.items)
+                remote_dom = notes_dom_templates.render_notes_list_dom(
+                    notes_response.items,
+                    limit=20,
+                    include_deleted=False,
+                    ui_format="both",
+                )
+                result = build_ui_with_text_and_dom(
+                    uri="ui://toolbridge/notes/list",
+                    html=html,
+                    remote_dom=remote_dom,
+                    text_summary=f"Displaying {len(notes_response.items)} note(s)",
+                    ui_format=UIFormat.BOTH,
+                )
+
+                assert len(result) == 3, f"Expected 3 content blocks for both, got {len(result)}"
+                assert result[0].type == "text", "First element should be TextContent"
+                assert result[1].resource.mimeType == "text/html", "Second should be HTML"
+                assert result[2].resource.mimeType == "application/vnd.mcp-ui.remote-dom", "Third should be Remote DOM"
+                logger.success("✓ list_notes_ui with ui_format='both' returns [text, html, remote-dom]")
+
+                # Test 7: Remote DOM for tasks
+                logger.info("7. Testing list_tasks_ui with ui_format='remote-dom'...")
+                tasks_response = TasksListResponse(**MOCK_TASKS_LIST)
+                remote_dom = tasks_dom_templates.render_tasks_list_dom(
+                    tasks_response.items,
+                    limit=20,
+                    include_deleted=False,
+                    ui_format="remote-dom",
+                )
+                result = build_ui_with_text_and_dom(
+                    uri="ui://toolbridge/tasks/list",
+                    html=None,
+                    remote_dom=remote_dom,
+                    text_summary=f"Displaying {len(tasks_response.items)} task(s)",
+                    ui_format=UIFormat.REMOTE_DOM,
+                )
+
+                assert len(result) == 2
+                assert result[1].resource.mimeType == "application/vnd.mcp-ui.remote-dom"
+                logger.success("✓ list_tasks_ui with ui_format='remote-dom' returns Remote DOM resource")
+
     finally:
         # Stop all patches
         for p in patches:
@@ -248,8 +320,11 @@ async def main():
             logger.info("  ✓ Models → HTML templates")
             logger.info("  ✓ HTML → UIResource with correct structure")
             logger.info("  ✓ TextContent fallback included")
-            logger.info("  ✓ Notes: list + detail views")
-            logger.info("  ✓ Tasks: list + detail views with icons/priority")
+            logger.info("  ✓ Notes: list + detail views (HTML)")
+            logger.info("  ✓ Tasks: list + detail views with icons/priority (HTML)")
+            logger.info("  ✓ Remote DOM format: notes list returns correct mimeType")
+            logger.info("  ✓ Remote DOM format: tasks list returns correct mimeType")
+            logger.info("  ✓ BOTH format: returns [text, html, remote-dom]")
             return 0
     except Exception as e:
         logger.error(f"Test failed: {e}")

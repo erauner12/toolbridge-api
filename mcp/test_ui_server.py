@@ -5,6 +5,8 @@ Minimal test server for MCP-UI without OAuth authentication.
 This server exposes only the UI tools for testing MCP-UI rendering
 without requiring WorkOS AuthKit authentication.
 
+Supports both HTML and Remote DOM formats via the ui_format parameter.
+
 Run: python test_ui_server.py
 Connect: http://localhost:8099/mcp
 """
@@ -77,9 +79,11 @@ mock_state = {
 }
 
 # Import UI helper from the actual codebase
-from toolbridge_mcp.ui.resources import build_ui_with_text
+from toolbridge_mcp.ui.resources import build_ui_with_text_and_dom, UIFormat
 from toolbridge_mcp.ui.templates import notes as notes_templates
 from toolbridge_mcp.ui.templates import tasks as tasks_templates
+from toolbridge_mcp.ui.remote_dom import notes as notes_dom_templates
+from toolbridge_mcp.ui.remote_dom import tasks as tasks_dom_templates
 from toolbridge_mcp.tools.notes import Note
 from toolbridge_mcp.tools.tasks import Task
 
@@ -94,18 +98,54 @@ def get_mock_tasks():
     return [Task(**t) for t in mock_state["tasks"] if t.get("deletedAt") is None]
 
 
-@mcp.tool()
-async def list_notes_ui(limit: int = 20) -> List[Union[TextContent, EmbeddedResource]]:
-    """List notes with rich HTML rendering for MCP-UI hosts.
+def validate_ui_format(ui_format: str) -> UIFormat:
+    """Validate and convert ui_format string to UIFormat enum.
 
-    Returns both text fallback and interactive HTML UI.
+    Returns UIFormat.HTML as default for invalid values to keep test server resilient.
+    """
+    try:
+        return UIFormat(ui_format)
+    except ValueError:
+        logger.warning(f"Invalid ui_format '{ui_format}', defaulting to 'html'")
+        return UIFormat.HTML
+
+
+@mcp.tool()
+async def list_notes_ui(
+    limit: int = 20,
+    ui_format: str = "html",
+) -> List[Union[TextContent, EmbeddedResource]]:
+    """List notes with rich HTML or Remote DOM rendering for MCP-UI hosts.
+
+    Args:
+        limit: Maximum number of notes to display
+        ui_format: UI format to return - 'html' (default), 'remote-dom', or 'both'
+
+    Returns both text fallback and interactive UI.
     """
     notes = get_mock_notes()[:limit]
-    html = notes_templates.render_notes_list_html(notes)
-    return build_ui_with_text(
+    fmt = validate_ui_format(ui_format)
+
+    html = None
+    remote_dom = None
+
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
+        html = notes_templates.render_notes_list_html(notes)
+
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+        remote_dom = notes_dom_templates.render_notes_list_dom(
+            notes,
+            limit=limit,
+            include_deleted=False,
+            ui_format=fmt.value,
+        )
+
+    return build_ui_with_text_and_dom(
         uri="ui://toolbridge/notes/list",
         html=html,
+        remote_dom=remote_dom,
         text_summary=f"Displaying {len(notes)} note(s)",
+        ui_format=fmt,
     )
 
 
@@ -113,35 +153,77 @@ async def list_notes_ui(limit: int = 20) -> List[Union[TextContent, EmbeddedReso
 async def show_note_ui(
     uid: str,
     include_deleted: bool = False,
+    ui_format: str = "html",
 ) -> List[Union[TextContent, EmbeddedResource]]:
-    """Show a single note with rich HTML rendering for MCP-UI hosts.
+    """Show a single note with rich HTML or Remote DOM rendering for MCP-UI hosts.
 
-    Returns both text fallback and interactive HTML UI.
+    Args:
+        uid: UID of the note to display
+        include_deleted: Whether to include deleted notes
+        ui_format: UI format to return - 'html' (default), 'remote-dom', or 'both'
+
+    Returns both text fallback and interactive UI.
     """
     # Find note by uid and convert to Pydantic model
     notes = get_mock_notes()
     note = next((n for n in notes if n.uid == uid), notes[0])
-    html = notes_templates.render_note_detail_html(note)
+    fmt = validate_ui_format(ui_format)
+
+    html = None
+    remote_dom = None
+
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
+        html = notes_templates.render_note_detail_html(note)
+
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+        remote_dom = notes_dom_templates.render_note_detail_dom(note, ui_format=fmt.value)
+
     title = note.payload.get("title", "Note")
-    return build_ui_with_text(
+    return build_ui_with_text_and_dom(
         uri=f"ui://toolbridge/notes/{note.uid}",
         html=html,
+        remote_dom=remote_dom,
         text_summary=f"Note: {title}",
+        ui_format=fmt,
     )
 
 
 @mcp.tool()
-async def list_tasks_ui(limit: int = 20) -> List[Union[TextContent, EmbeddedResource]]:
-    """List tasks with rich HTML rendering for MCP-UI hosts.
+async def list_tasks_ui(
+    limit: int = 20,
+    ui_format: str = "html",
+) -> List[Union[TextContent, EmbeddedResource]]:
+    """List tasks with rich HTML or Remote DOM rendering for MCP-UI hosts.
 
-    Returns both text fallback and interactive HTML UI with status icons.
+    Args:
+        limit: Maximum number of tasks to display
+        ui_format: UI format to return - 'html' (default), 'remote-dom', or 'both'
+
+    Returns both text fallback and interactive UI with status icons.
     """
     tasks = get_mock_tasks()[:limit]
-    html = tasks_templates.render_tasks_list_html(tasks)
-    return build_ui_with_text(
+    fmt = validate_ui_format(ui_format)
+
+    html = None
+    remote_dom = None
+
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
+        html = tasks_templates.render_tasks_list_html(tasks)
+
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+        remote_dom = tasks_dom_templates.render_tasks_list_dom(
+            tasks,
+            limit=limit,
+            include_deleted=False,
+            ui_format=fmt.value,
+        )
+
+    return build_ui_with_text_and_dom(
         uri="ui://toolbridge/tasks/list",
         html=html,
+        remote_dom=remote_dom,
         text_summary=f"Displaying {len(tasks)} task(s)",
+        ui_format=fmt,
     )
 
 
@@ -149,20 +231,38 @@ async def list_tasks_ui(limit: int = 20) -> List[Union[TextContent, EmbeddedReso
 async def show_task_ui(
     uid: str,
     include_deleted: bool = False,
+    ui_format: str = "html",
 ) -> List[Union[TextContent, EmbeddedResource]]:
-    """Show a single task with rich HTML rendering for MCP-UI hosts.
+    """Show a single task with rich HTML or Remote DOM rendering for MCP-UI hosts.
 
-    Returns both text fallback and interactive HTML UI.
+    Args:
+        uid: UID of the task to display
+        include_deleted: Whether to include deleted tasks
+        ui_format: UI format to return - 'html' (default), 'remote-dom', or 'both'
+
+    Returns both text fallback and interactive UI.
     """
     # Find task by uid and convert to Pydantic model
     tasks = get_mock_tasks()
     task = next((t for t in tasks if t.uid == uid), tasks[0])
-    html = tasks_templates.render_task_detail_html(task)
+    fmt = validate_ui_format(ui_format)
+
+    html = None
+    remote_dom = None
+
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
+        html = tasks_templates.render_task_detail_html(task)
+
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+        remote_dom = tasks_dom_templates.render_task_detail_dom(task, ui_format=fmt.value)
+
     title = task.payload.get("title", "Task")
-    return build_ui_with_text(
+    return build_ui_with_text_and_dom(
         uri=f"ui://toolbridge/tasks/{task.uid}",
         html=html,
+        remote_dom=remote_dom,
         text_summary=f"Task: {title}",
+        ui_format=fmt,
     )
 
 
@@ -175,11 +275,17 @@ async def delete_note_ui(
     uid: str,
     limit: int = 20,
     include_deleted: bool = False,
+    ui_format: str = "html",
 ) -> List[Union[TextContent, EmbeddedResource]]:
     """Delete a note and return updated UI list (MCP-UI).
 
-    Marks the note as deleted and returns the updated notes list with interactive HTML.
-    The limit and include_deleted params preserve list context from the caller.
+    Args:
+        uid: UID of the note to delete
+        limit: Maximum notes to display in refreshed list
+        include_deleted: Whether to include deleted notes
+        ui_format: UI format to return - 'html' (default), 'remote-dom', or 'both'
+
+    Marks the note as deleted and returns the updated notes list with interactive UI.
     """
     from datetime import datetime
 
@@ -191,13 +297,30 @@ async def delete_note_ui(
             note_title = note["payload"].get("title", "Note")
             break
 
-    # Return updated notes list (mock ignores limit/include_deleted but accepts them)
+    # Return updated notes list
     notes = get_mock_notes()[:limit]
-    html = notes_templates.render_notes_list_html(notes, limit=limit, include_deleted=include_deleted)
-    return build_ui_with_text(
+    fmt = validate_ui_format(ui_format)
+
+    html = None
+    remote_dom = None
+
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
+        html = notes_templates.render_notes_list_html(notes, limit=limit, include_deleted=include_deleted)
+
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+        remote_dom = notes_dom_templates.render_notes_list_dom(
+            notes,
+            limit=limit,
+            include_deleted=include_deleted,
+            ui_format=fmt.value,
+        )
+
+    return build_ui_with_text_and_dom(
         uri="ui://toolbridge/notes/list",
         html=html,
-        text_summary=f"🗑️ Deleted '{note_title}' - {len(notes)} note(s) remaining",
+        remote_dom=remote_dom,
+        text_summary=f"Deleted '{note_title}' - {len(notes)} note(s) remaining",
+        ui_format=fmt,
     )
 
 
@@ -207,12 +330,19 @@ async def process_task_ui(
     action: str,
     limit: int = 20,
     include_deleted: bool = False,
+    ui_format: str = "html",
 ) -> List[Union[TextContent, EmbeddedResource]]:
     """Process a task action and return updated UI (MCP-UI).
 
+    Args:
+        uid: UID of the task to process
+        action: Action to perform (start, complete, reopen)
+        limit: Maximum tasks to display in refreshed list
+        include_deleted: Whether to include deleted tasks
+        ui_format: UI format to return - 'html' (default), 'remote-dom', or 'both'
+
     Supported actions: start, complete, reopen.
-    Returns the updated tasks list with interactive HTML.
-    The limit and include_deleted params preserve list context from the caller.
+    Returns the updated tasks list with interactive UI.
     """
     # Find and process the task
     task_title = "Unknown"
@@ -227,14 +357,31 @@ async def process_task_ui(
                 task["payload"]["status"] = "todo"
             break
 
-    # Return updated tasks list (mock ignores limit/include_deleted but accepts them)
+    # Return updated tasks list
     tasks = get_mock_tasks()[:limit]
-    html = tasks_templates.render_tasks_list_html(tasks, limit=limit, include_deleted=include_deleted)
-    action_emoji = {"complete": "✅", "start": "🔄", "reopen": "↩️"}.get(action, "✓")
-    return build_ui_with_text(
+    fmt = validate_ui_format(ui_format)
+
+    html = None
+    remote_dom = None
+
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
+        html = tasks_templates.render_tasks_list_html(tasks, limit=limit, include_deleted=include_deleted)
+
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+        remote_dom = tasks_dom_templates.render_tasks_list_dom(
+            tasks,
+            limit=limit,
+            include_deleted=include_deleted,
+            ui_format=fmt.value,
+        )
+
+    action_text = {"complete": "Done", "start": "Started", "reopen": "Reopened"}.get(action, action.capitalize())
+    return build_ui_with_text_and_dom(
         uri="ui://toolbridge/tasks/list",
         html=html,
-        text_summary=f"{action_emoji} {action.capitalize()}d '{task_title}' - {len(tasks)} task(s) total",
+        remote_dom=remote_dom,
+        text_summary=f"{action_text} '{task_title}' - {len(tasks)} task(s) total",
+        ui_format=fmt,
     )
 
 
@@ -243,11 +390,17 @@ async def archive_task_ui(
     uid: str,
     limit: int = 20,
     include_deleted: bool = False,
+    ui_format: str = "html",
 ) -> List[Union[TextContent, EmbeddedResource]]:
     """Archive a task and return updated UI (MCP-UI).
 
-    Marks the task as archived (deleted) and returns the updated tasks list with interactive HTML.
-    The limit and include_deleted params preserve list context from the caller.
+    Args:
+        uid: UID of the task to archive
+        limit: Maximum tasks to display in refreshed list
+        include_deleted: Whether to include deleted tasks
+        ui_format: UI format to return - 'html' (default), 'remote-dom', or 'both'
+
+    Marks the task as archived (deleted) and returns the updated tasks list with interactive UI.
     """
     from datetime import datetime
 
@@ -259,13 +412,30 @@ async def archive_task_ui(
             task_title = task["payload"].get("title", "Task")
             break
 
-    # Return updated tasks list (mock ignores limit/include_deleted but accepts them)
+    # Return updated tasks list
     tasks = get_mock_tasks()[:limit]
-    html = tasks_templates.render_tasks_list_html(tasks, limit=limit, include_deleted=include_deleted)
-    return build_ui_with_text(
+    fmt = validate_ui_format(ui_format)
+
+    html = None
+    remote_dom = None
+
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
+        html = tasks_templates.render_tasks_list_html(tasks, limit=limit, include_deleted=include_deleted)
+
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+        remote_dom = tasks_dom_templates.render_tasks_list_dom(
+            tasks,
+            limit=limit,
+            include_deleted=include_deleted,
+            ui_format=fmt.value,
+        )
+
+    return build_ui_with_text_and_dom(
         uri="ui://toolbridge/tasks/list",
         html=html,
-        text_summary=f"📦 Archived '{task_title}' - {len(tasks)} task(s) remaining",
+        remote_dom=remote_dom,
+        text_summary=f"Archived '{task_title}' - {len(tasks)} task(s) remaining",
+        ui_format=fmt,
     )
 
 
@@ -280,13 +450,19 @@ if __name__ == "__main__":
     logger.info("  MCP-UI Test Server (No Authentication)")
     logger.info("=" * 60)
     logger.info("")
-    logger.info("This server has 4 UI tools with mock data for testing MCP-UI.")
+    logger.info("This server has 7 UI tools with mock data for testing MCP-UI.")
+    logger.info("Supports both HTML and Remote DOM formats via ui_format parameter.")
     logger.info("")
     logger.info("Tools available:")
-    logger.info("  - list_notes_ui: List notes with HTML rendering")
-    logger.info("  - show_note_ui: Show single note with HTML rendering")
-    logger.info("  - list_tasks_ui: List tasks with HTML rendering")
-    logger.info("  - show_task_ui: Show single task with HTML rendering")
+    logger.info("  - list_notes_ui: List notes with HTML/Remote DOM rendering")
+    logger.info("  - show_note_ui: Show single note with HTML/Remote DOM rendering")
+    logger.info("  - delete_note_ui: Delete note and return updated list")
+    logger.info("  - list_tasks_ui: List tasks with HTML/Remote DOM rendering")
+    logger.info("  - show_task_ui: Show single task with HTML/Remote DOM rendering")
+    logger.info("  - process_task_ui: Process task action (start/complete/reopen)")
+    logger.info("  - archive_task_ui: Archive task and return updated list")
+    logger.info("")
+    logger.info("UI format options: 'html' (default), 'remote-dom', 'both'")
     logger.info("")
     logger.info("Starting server on http://localhost:8099/mcp")
     logger.info("")
@@ -297,6 +473,7 @@ if __name__ == "__main__":
     logger.info("  4. Select 'Direct' connection type")
     logger.info("  5. Click Connect")
     logger.info("  6. Go to Tools tab and call list_notes_ui or list_tasks_ui")
+    logger.info("  7. Try ui_format='remote-dom' to get native Flutter UI data")
     logger.info("")
 
     # Get the FastMCP app
