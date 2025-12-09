@@ -62,8 +62,9 @@ def create_session(
         note_uid=note.uid,
         base_version=note.version,
         title=(note.payload.get("title") or "Untitled note").strip(),
-        original_content=(note.payload.get("content") or "").strip(),
-        proposed_content=proposed_content.strip(),
+        # Preserve whitespace verbatim - important for markdown/code formatting
+        original_content=note.payload.get("content") or "",
+        proposed_content=proposed_content,
         summary=summary,
         created_by=user_id,
     )

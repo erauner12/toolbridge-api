@@ -274,8 +274,8 @@ async def edit_note_ui(
     ui_format: Annotated[
         str,
         Field(
-            description="UI format: 'remote-dom' (default) or 'both'",
-            pattern="^(remote-dom|both)$",
+            description="UI format: 'remote-dom' only (HTML not yet supported for diff views)",
+            pattern="^(remote-dom)$",
         ),
     ] = "remote-dom",
 ) -> List[Union[TextContent, EmbeddedResource]]:
@@ -293,7 +293,7 @@ async def edit_note_ui(
         uid: Unique identifier of the note (UUID format)
         new_content: The complete rewritten note content with changes applied
         summary: Optional short human-readable description of what changed
-        ui_format: UI format to return - 'remote-dom' (default) or 'both'
+        ui_format: UI format to return - 'remote-dom' only (HTML not yet supported)
 
     Returns:
         List containing TextContent (summary) and Remote DOM diff preview
@@ -319,10 +319,9 @@ async def edit_note_ui(
 
     # Fetch the current note
     note: Note = await get_note(uid=uid, include_deleted=False)
-    original_content = (note.payload.get("content") or "").strip()
     title = (note.payload.get("title") or "Untitled note").strip()
 
-    # Create edit session
+    # Create edit session (preserves whitespace verbatim)
     session = create_session(
         note=note,
         proposed_content=new_content,
@@ -330,8 +329,8 @@ async def edit_note_ui(
         user_id=user_id,
     )
 
-    # Compute diff hunks
-    diff_hunks = compute_line_diff(original_content, new_content)
+    # Compute diff hunks using session's preserved content
+    diff_hunks = compute_line_diff(session.original_content, session.proposed_content)
 
     # Render Remote DOM diff preview
     remote_dom = note_edits_dom.render_note_edit_diff_dom(
@@ -373,8 +372,8 @@ async def apply_note_edit(
     ui_format: Annotated[
         str,
         Field(
-            description="UI format: 'remote-dom' (default) or 'both'",
-            pattern="^(remote-dom|both)$",
+            description="UI format: 'remote-dom' only (HTML not yet supported)",
+            pattern="^(remote-dom)$",
         ),
     ] = "remote-dom",
 ) -> List[Union[TextContent, EmbeddedResource]]:
@@ -389,7 +388,7 @@ async def apply_note_edit(
 
     Args:
         edit_id: The edit session ID from a previous edit_note_ui call
-        ui_format: UI format to return - 'remote-dom' (default) or 'both'
+        ui_format: UI format to return - 'remote-dom' only (HTML not yet supported)
 
     Returns:
         List containing TextContent (summary) and Remote DOM confirmation
