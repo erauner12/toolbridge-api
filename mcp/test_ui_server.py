@@ -490,12 +490,16 @@ async def edit_note_ui(
         uid: UID of the note to edit
         new_content: The complete rewritten note content
         summary: Optional short description of what changed
-        ui_format: UI format to return - 'remote-dom' (default) or 'both'
+        ui_format: UI format - only 'remote-dom' supported (HTML not implemented)
 
     Returns:
         List containing TextContent (summary) and Remote DOM diff preview
     """
     logger.info(f"Creating note edit session: uid={uid}")
+
+    # Only remote-dom supported - HTML templates not implemented for diff views
+    if ui_format not in ("remote-dom",):
+        raise ValueError(f"ui_format must be 'remote-dom', got '{ui_format}'")
 
     # Find note by uid
     note_dict = next((n for n in mock_state["notes"] if n["uid"] == uid), None)
@@ -503,7 +507,8 @@ async def edit_note_ui(
         note_dict = mock_state["notes"][0]  # Fallback to first note
 
     note = Note(**note_dict)
-    original_content = (note.payload.get("content") or "").strip()
+    # Preserve whitespace - important for markdown/code formatting
+    original_content = note.payload.get("content") or ""
     title = (note.payload.get("title") or "Untitled note").strip()
 
     # Create edit session
@@ -538,14 +543,13 @@ async def edit_note_ui(
         frame_style=Layout.CHAT_FRAME_CARD,
         max_width=Layout.MAX_WIDTH_DETAIL,
     )
-    fmt = validate_ui_format(ui_format)
 
     return build_ui_with_text_and_dom(
         uri=ui_uri,
         html=None,
         remote_dom=remote_dom,
         text_summary=text_summary,
-        ui_format=fmt,
+        ui_format=UIFormat.REMOTE_DOM,
         remote_dom_ui_metadata=ui_metadata,
         remote_dom_metadata={
             "note_uid": uid,
@@ -565,13 +569,16 @@ async def apply_note_edit(
 
     Args:
         edit_id: The edit session ID from a previous edit_note_ui call
-        ui_format: UI format to return - 'remote-dom' (default) or 'both'
+        ui_format: UI format - only 'remote-dom' supported (HTML not implemented)
 
     Returns:
         List containing TextContent (summary) and Remote DOM confirmation
     """
     logger.info(f"Applying note edit: edit_id={edit_id}")
-    fmt = validate_ui_format(ui_format)
+
+    # Only remote-dom supported - HTML templates not implemented for diff views
+    if ui_format not in ("remote-dom",):
+        raise ValueError(f"ui_format must be 'remote-dom', got '{ui_format}'")
 
     session = mock_edit_sessions.get(edit_id)
     if session is None:
@@ -584,7 +591,7 @@ async def apply_note_edit(
             html=None,
             remote_dom=remote_dom,
             text_summary=error_msg,
-            ui_format=fmt,
+            ui_format=UIFormat.REMOTE_DOM,
         )
 
     # Apply the change to mock data
@@ -618,7 +625,7 @@ async def apply_note_edit(
         html=None,
         remote_dom=remote_dom,
         text_summary=text_summary,
-        ui_format=fmt,
+        ui_format=UIFormat.REMOTE_DOM,
         remote_dom_ui_metadata=ui_metadata,
     )
 

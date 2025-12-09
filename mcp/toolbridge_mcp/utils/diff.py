@@ -51,18 +51,18 @@ def compute_line_diff(
         return []
     
     if not orig_lines:
-        # All new content
+        # All new content - preserve whitespace for accurate preview
         return [DiffHunk(
             kind="added",
             original="",
-            proposed=proposed.strip(),
+            proposed=proposed,
         )]
-    
+
     if not new_lines:
-        # All removed
+        # All removed - preserve whitespace for accurate preview
         return [DiffHunk(
             kind="removed",
-            original=original.strip(),
+            original=original,
             proposed="",
         )]
     
@@ -70,8 +70,9 @@ def compute_line_diff(
     hunks: List[DiffHunk] = []
     
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        orig_text = "".join(orig_lines[i1:i2]).strip()
-        new_text = "".join(new_lines[j1:j2]).strip()
+        # Preserve whitespace - important for markdown/code where indentation matters
+        orig_text = "".join(orig_lines[i1:i2]).rstrip("\n")
+        new_text = "".join(new_lines[j1:j2]).rstrip("\n")
         
         if tag == "equal":
             # Unchanged section - truncate if too long
