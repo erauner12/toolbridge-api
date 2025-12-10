@@ -31,6 +31,55 @@ from fastmcp.server.dependencies import get_access_token
 import httpx
 
 
+# Default max lines to show in unchanged sections for display
+MAX_UNCHANGED_LINES_DISPLAY = 5
+
+
+def _truncate_unchanged_for_display(
+    hunks: List[DiffHunk],
+    max_lines: int = MAX_UNCHANGED_LINES_DISPLAY,
+) -> List[DiffHunk]:
+    """
+    Truncate long unchanged sections for display purposes.
+
+    Called AFTER annotate_hunks_with_ids so line ranges are accurate.
+    Only modifies the original/proposed text for display, not the line ranges.
+
+    Args:
+        hunks: Annotated hunks with correct line ranges
+        max_lines: Maximum lines to show in unchanged sections
+
+    Returns:
+        List of hunks with truncated unchanged content for display
+    """
+    result = []
+    for h in hunks:
+        if h.kind == "unchanged" and h.original:
+            lines = h.original.split("\n")
+            if len(lines) > max_lines:
+                half = max_lines // 2
+                truncated = (
+                    "\n".join(lines[:half]) +
+                    f"\n... ({len(lines) - max_lines} lines unchanged) ...\n" +
+                    "\n".join(lines[-half:])
+                )
+                result.append(DiffHunk(
+                    kind=h.kind,
+                    original=truncated,
+                    proposed=truncated,
+                    id=h.id,
+                    orig_start=h.orig_start,
+                    orig_end=h.orig_end,
+                    new_start=h.new_start,
+                    new_end=h.new_end,
+                ))
+            else:
+                result.append(h)
+        else:
+            result.append(h)
+    return result
+
+
 @mcp.tool()
 async def list_notes_ui(
     limit: Annotated[int, Field(ge=1, le=100, description="Max notes to display")] = 20,
@@ -325,9 +374,13 @@ async def edit_note_ui(
     title = (note.payload.get("title") or "Untitled note").strip()
 
     # Compute diff hunks before creating session
+    # Use truncate_unchanged=False for accurate line ranges in annotation,
+    # then truncate display text afterwards to avoid misleading line numbers.
     original_content = note.payload.get("content") or ""
-    diff_hunks = compute_line_diff(original_content, new_content)
+    diff_hunks = compute_line_diff(original_content, new_content, truncate_unchanged=False)
     diff_hunks = annotate_hunks_with_ids(diff_hunks)
+    # Now truncate long unchanged sections for display (line ranges already computed)
+    diff_hunks = _truncate_unchanged_for_display(diff_hunks)
 
     # Create edit session with annotated hunks
     session = create_session(
