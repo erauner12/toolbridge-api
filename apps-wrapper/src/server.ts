@@ -216,6 +216,9 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 // START SERVER - HTTP/SSE for Fly.io, stdio for local
 // ════════════════════════════════════════════════════════════════════════════
 
+// Store transports by session ID for SSE
+const transports = new Map<string, SSEServerTransport>();
+
 async function startHttpServer() {
   const app = express();
 
@@ -226,22 +229,51 @@ async function startHttpServer() {
 
   // SSE endpoint for MCP
   app.get("/sse", async (req, res) => {
-    console.error("[Apps] SSE connection established");
+    console.error("[Apps] SSE connection request received");
 
+    // Create transport - it tells client to POST to /message?sessionId=xxx
     const transport = new SSEServerTransport("/message", res);
-    await server.connect(transport);
+    const sessionId = transport.sessionId;
+
+    console.error(`[Apps] SSE session created: ${sessionId}`);
+
+    // Store transport by session ID
+    transports.set(sessionId, transport);
 
     // Handle client disconnect
-    req.on("close", () => {
-      console.error("[Apps] SSE connection closed");
+    res.on("close", () => {
+      console.error(`[Apps] SSE connection closed: ${sessionId}`);
+      transports.delete(sessionId);
     });
+
+    // Connect the MCP server to this transport
+    await server.connect(transport);
+
+    console.error(`[Apps] SSE connection established: ${sessionId}`);
   });
 
-  // Message endpoint for MCP
+  // Message endpoint for MCP - receives POST messages from client
   app.post("/message", express.json(), async (req, res) => {
-    console.error("[Apps] Received message:", JSON.stringify(req.body));
-    // The SSE transport handles this internally
-    res.status(200).end();
+    const sessionId = req.query.sessionId as string;
+    console.error(`[Apps] Received message for session ${sessionId}:`, JSON.stringify(req.body));
+
+    const transport = transports.get(sessionId);
+
+    if (!transport) {
+      console.error(`[Apps] No transport found for session: ${sessionId}`);
+      res.status(400).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: `No transport found for sessionId: ${sessionId}`,
+        },
+        id: null,
+      });
+      return;
+    }
+
+    // Pass the message to the transport for processing
+    await transport.handlePostMessage(req, res, req.body);
   });
 
   app.listen(PORT, () => {
