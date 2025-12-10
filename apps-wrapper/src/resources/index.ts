@@ -127,40 +127,56 @@ export function createWidgetHtml(uri: string, data: unknown): string {
   const bridgeScript = `
     // Data can come from:
     // 1. Embedded in template (for embedded resources with data)
-    // 2. Fetched via bridge (for static templates in ChatGPT)
+    // 2. ChatGPT's window.openai.toolOutput (for static templates)
+    // 3. ChatGPT's render data message event
     let data = ${dataJson};
 
-    // Tool call function - uses ChatGPT bridge when available
+    // Check ChatGPT's openai object for render data
+    function checkOpenAIData() {
+      if (window.openai?.toolOutput) {
+        console.log('[Widget] Found window.openai.toolOutput');
+        data = window.openai.toolOutput;
+        return true;
+      }
+      return false;
+    }
+
+    // Listen for ChatGPT render data message
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'ui-lifecycle-iframe-render-data') {
+        console.log('[Widget] Received render data from ChatGPT');
+        const renderData = event.data.payload?.renderData;
+        if (renderData?.toolOutput) {
+          data = renderData.toolOutput;
+          console.log('[Widget] Updated data from toolOutput:', Object.keys(data || {}));
+          if (typeof render === 'function') render();
+        }
+      }
+    });
+
+    // Request render data from ChatGPT (in case we missed it)
+    setTimeout(() => {
+      window.parent?.postMessage({ type: 'ui-request-render-data' }, '*');
+    }, 100);
+
+    // Tool call function - uses ChatGPT's openai API when available
     async function callTool(name, args) {
-      if (window.__MCP_BRIDGE__?.callTool) {
-        return window.__MCP_BRIDGE__.callTool(name, args);
+      if (window.openai?.callTool) {
+        console.log('[Widget] Calling tool via window.openai:', name);
+        return window.openai.callTool(name, args);
       }
       // Fallback: post message to parent (for MCP-UI hosts)
       window.parent?.postMessage({
-        type: 'mcp:tool_call',
-        tool: name,
-        arguments: args
+        type: 'tool',
+        payload: { toolName: name, params: args }
       }, '*');
     }
 
-    // For static templates, fetch data via bridge on load
-    async function fetchDataIfNeeded() {
-      // Only fetch if we don't have data and bridge is available
-      const hasData = data && (data.items?.length > 0 || data.notes?.length > 0 || data.note || data.uid);
-      if (!hasData && window.__MCP_BRIDGE__?.callTool) {
-        console.log('[Widget] No embedded data, fetching via bridge...');
-        try {
-          const result = await window.__MCP_BRIDGE__.callTool('list_notes', { limit: 20 });
-          if (result?.structuredContent) {
-            data = result.structuredContent;
-          } else if (result?.content?.[0]?.text) {
-            data = JSON.parse(result.content[0].text);
-          }
-          console.log('[Widget] Fetched data:', Object.keys(data || {}));
-          if (typeof render === 'function') render();
-        } catch (e) {
-          console.error('[Widget] Failed to fetch data:', e);
-        }
+    // Initialize: check openai object for data
+    function initData() {
+      const hasEmbedded = data && (data.items?.length > 0 || data.notes?.length > 0 || data.note || data.uid);
+      if (!hasEmbedded) {
+        checkOpenAIData();
       }
     }
   `;
@@ -259,32 +275,9 @@ function createNotesListWidget(baseStyles: string, bridgeScript: string, dataJso
       }
     }
 
-    // For static templates in ChatGPT, fetch data via bridge
-    async function fetchDataIfNeeded() {
-      const hasData = data && (data.items?.length > 0 || data.notes?.length > 0);
-      if (!hasData && window.__MCP_BRIDGE__?.callTool) {
-        console.log('[NotesListWidget] No embedded data, fetching via bridge...');
-        isLoading = true;
-        render();
-        try {
-          const result = await window.__MCP_BRIDGE__.callTool('list_notes', { limit: 20 });
-          console.log('[NotesListWidget] Bridge result:', result);
-          if (result?.structuredContent) {
-            data = result.structuredContent;
-          } else if (result?.content?.[0]?.text) {
-            data = JSON.parse(result.content[0].text);
-          }
-          console.log('[NotesListWidget] Fetched data keys:', Object.keys(data || {}));
-        } catch (e) {
-          console.error('[NotesListWidget] Failed to fetch data:', e);
-        }
-        isLoading = false;
-      }
-      render();
-    }
-
-    // Initialize: fetch data if needed, then render
-    fetchDataIfNeeded();
+    // Initialize and render
+    initData();
+    render();
   </script>
 </body>
 </html>`;

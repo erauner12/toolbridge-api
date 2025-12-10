@@ -248,20 +248,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     console.error(`[Apps] Final structuredContent:`, structuredContent ? JSON.stringify(structuredContent).slice(0, 500) : 'undefined');
 
-    // Create embedded UI resource for MCP-UI hosts (without adapter)
+    // Create embedded UI resource WITH data baked in
+    // IMPORTANT: Enable Apps SDK adapter so ChatGPT renders it (text/html+skybridge)
     let embeddedResource: UIResource | null = null;
     if (toolDef?.outputTemplate) {
-      const html = createWidgetHtml(toolDef.outputTemplate, structuredContent);
+      const html = createWidgetHtml(toolDef.outputTemplate, structuredContent || {});
       const embeddedUri = `ui://toolbridge/embedded/${name}` as `ui://${string}`;
       embeddedResource = createUIResource({
         uri: embeddedUri,
         encoding: "text",
-        // NO adapter - this is for MCP-UI hosts
+        // Enable Apps SDK adapter so ChatGPT renders this resource
+        adapters: {
+          appsSdk: {
+            enabled: true,
+          },
+        },
         content: {
           type: "rawHtml",
           htmlString: html,
         },
       });
+      console.error(`[Apps] Created embedded resource with skybridge adapter, data keys:`, Object.keys(structuredContent || {}));
     }
 
     // Return embedded UI resource with data baked in
