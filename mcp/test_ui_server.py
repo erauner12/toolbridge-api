@@ -85,6 +85,7 @@ from toolbridge_mcp.ui.templates import tasks as tasks_templates
 from toolbridge_mcp.ui.remote_dom import notes as notes_dom_templates
 from toolbridge_mcp.ui.remote_dom import tasks as tasks_dom_templates
 from toolbridge_mcp.ui.remote_dom import note_edits as note_edits_dom
+from toolbridge_mcp.ui.templates import note_edits as note_edits_templates
 from toolbridge_mcp.ui.remote_dom.design import Layout, get_chat_metadata
 from toolbridge_mcp.tools.notes import Note
 from toolbridge_mcp.tools.tasks import Task
@@ -541,7 +542,7 @@ async def edit_note_ui(
     uid: str,
     new_content: str,
     summary: str | None = None,
-    ui_format: str = "remote-dom",
+    ui_format: str = "html",
 ) -> List[Union[TextContent, EmbeddedResource]]:
     """Propose changes to a note and display a diff preview (MCP-UI).
 
@@ -552,16 +553,13 @@ async def edit_note_ui(
         uid: UID of the note to edit
         new_content: The complete rewritten note content
         summary: Optional short description of what changed
-        ui_format: UI format - only 'remote-dom' supported (HTML not implemented)
+        ui_format: UI format - 'html' (default), 'remote-dom', or 'both'
 
     Returns:
-        List containing TextContent (summary) and Remote DOM diff preview
+        List containing TextContent (summary) and HTML/Remote DOM diff preview
     """
     logger.info(f"Creating note edit session: uid={uid}")
-
-    # Only remote-dom supported - HTML templates not implemented for diff views
-    if ui_format not in ("remote-dom",):
-        raise ValueError(f"ui_format must be 'remote-dom', got '{ui_format}'")
+    fmt = validate_ui_format(ui_format)
 
     # Find note by uid
     note_dict = next((n for n in mock_state["notes"] if n["uid"] == uid), None)
@@ -608,13 +606,25 @@ async def edit_note_ui(
     )
     mock_edit_sessions[session_id] = session
 
-    # Render Remote DOM diff preview with per-hunk actions
-    remote_dom = note_edits_dom.render_note_edit_diff_dom(
-        note=note,
-        hunks=hunk_states,
-        edit_id=session_id,
-        summary=summary,
-    )
+    # Render HTML and/or Remote DOM based on format
+    html = None
+    remote_dom = None
+
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
+        html = note_edits_templates.render_note_edit_diff_html(
+            note=note,
+            hunks=hunk_states,
+            edit_id=session_id,
+            summary=summary,
+        )
+
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+        remote_dom = note_edits_dom.render_note_edit_diff_dom(
+            note=note,
+            hunks=hunk_states,
+            edit_id=session_id,
+            summary=summary,
+        )
 
     # Build fallback text summary
     text_summary = summary or f"Proposed changes to '{title}' (v{note.version})"
@@ -627,10 +637,10 @@ async def edit_note_ui(
 
     return build_ui_with_text_and_dom(
         uri=ui_uri,
-        html=None,
+        html=html,
         remote_dom=remote_dom,
         text_summary=text_summary,
-        ui_format=UIFormat.REMOTE_DOM,
+        ui_format=fmt,
         remote_dom_ui_metadata=ui_metadata,
         remote_dom_metadata={
             "note_uid": uid,
@@ -642,7 +652,7 @@ async def edit_note_ui(
 @mcp.tool()
 async def apply_note_edit(
     edit_id: str,
-    ui_format: str = "remote-dom",
+    ui_format: str = "html",
 ) -> List[Union[TextContent, EmbeddedResource]]:
     """Apply a pending note edit session.
 
@@ -650,29 +660,31 @@ async def apply_note_edit(
 
     Args:
         edit_id: The edit session ID from a previous edit_note_ui call
-        ui_format: UI format - only 'remote-dom' supported (HTML not implemented)
+        ui_format: UI format - 'html' (default), 'remote-dom', or 'both'
 
     Returns:
-        List containing TextContent (summary) and Remote DOM confirmation
+        List containing TextContent (summary) and HTML/Remote DOM confirmation
     """
     logger.info(f"Applying note edit: edit_id={edit_id}")
-
-    # Only remote-dom supported - HTML templates not implemented for diff views
-    if ui_format not in ("remote-dom",):
-        raise ValueError(f"ui_format must be 'remote-dom', got '{ui_format}'")
+    fmt = validate_ui_format(ui_format)
 
     session = mock_edit_sessions.get(edit_id)
     if session is None:
         error_msg = f"Edit session '{edit_id}' not found or expired"
         logger.warning(error_msg)
 
-        remote_dom = note_edits_dom.render_note_edit_error_dom(error_msg)
+        html = None
+        remote_dom = None
+        if fmt in (UIFormat.HTML, UIFormat.BOTH):
+            html = note_edits_templates.render_note_edit_error_html(error_msg)
+        if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+            remote_dom = note_edits_dom.render_note_edit_error_dom(error_msg)
         return build_ui_with_text_and_dom(
             uri=f"ui://toolbridge/notes/edit/{edit_id}/error",
-            html=None,
+            html=html,
             remote_dom=remote_dom,
             text_summary=error_msg,
-            ui_format=UIFormat.REMOTE_DOM,
+            ui_format=fmt,
         )
 
     # Apply the change to mock data
@@ -694,7 +706,14 @@ async def apply_note_edit(
     del mock_edit_sessions[edit_id]
 
     text_summary = f"Applied note edit to '{session.title}'. New version: v{updated_note.version}."
-    remote_dom = note_edits_dom.render_note_edit_success_dom(updated_note)
+
+    html = None
+    remote_dom = None
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
+        html = note_edits_templates.render_note_edit_success_html(updated_note)
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+        remote_dom = note_edits_dom.render_note_edit_success_dom(updated_note)
+
     ui_uri = f"ui://toolbridge/notes/{updated_note.uid}"
     ui_metadata = get_chat_metadata(
         frame_style=Layout.CHAT_FRAME_CARD,
@@ -703,10 +722,10 @@ async def apply_note_edit(
 
     return build_ui_with_text_and_dom(
         uri=ui_uri,
-        html=None,
+        html=html,
         remote_dom=remote_dom,
         text_summary=text_summary,
-        ui_format=UIFormat.REMOTE_DOM,
+        ui_format=fmt,
         remote_dom_ui_metadata=ui_metadata,
     )
 
@@ -714,6 +733,7 @@ async def apply_note_edit(
 @mcp.tool()
 async def discard_note_edit(
     edit_id: str,
+    ui_format: str = "html",
 ) -> List[Union[TextContent, EmbeddedResource]]:
     """Discard a pending note edit session.
 
@@ -721,11 +741,13 @@ async def discard_note_edit(
 
     Args:
         edit_id: The edit session ID from a previous edit_note_ui call
+        ui_format: UI format - 'html' (default), 'remote-dom', or 'both'
 
     Returns:
-        List containing TextContent (summary) and Remote DOM confirmation
+        List containing TextContent (summary) and HTML/Remote DOM confirmation
     """
     logger.info(f"Discarding note edit: edit_id={edit_id}")
+    fmt = validate_ui_format(ui_format)
 
     session = mock_edit_sessions.pop(edit_id, None)
 
@@ -736,15 +758,21 @@ async def discard_note_edit(
         title = session.title
         text_summary = f"Discarded pending edit session for '{title}'."
 
-    remote_dom = note_edits_dom.render_note_edit_discarded_dom(title)
+    html = None
+    remote_dom = None
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
+        html = note_edits_templates.render_note_edit_discarded_html(title)
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+        remote_dom = note_edits_dom.render_note_edit_discarded_dom(title)
+
     ui_uri = f"ui://toolbridge/notes/edit/{edit_id}/discarded"
 
     return build_ui_with_text_and_dom(
         uri=ui_uri,
-        html=None,
+        html=html,
         remote_dom=remote_dom,
         text_summary=text_summary,
-        ui_format=UIFormat.REMOTE_DOM,
+        ui_format=fmt,
     )
 
 
@@ -765,20 +793,35 @@ def _get_session_and_note(edit_id: str) -> tuple[MockEditSession | None, Note | 
     return session, Note(**note_dict), None
 
 
-def _render_updated_diff(session: MockEditSession, note: Note) -> dict:
-    """Re-render the diff preview with current hunk states."""
-    return note_edits_dom.render_note_edit_diff_dom(
-        note=note,
-        hunks=session.hunks,
-        edit_id=session.id,
-        summary=session.summary,
-    )
+def _render_updated_diff(session: MockEditSession, note: Note, fmt: UIFormat) -> tuple[str | None, dict | None]:
+    """Re-render the diff preview with current hunk states.
+
+    Returns (html, remote_dom) tuple based on requested format.
+    """
+    html = None
+    remote_dom = None
+    if fmt in (UIFormat.HTML, UIFormat.BOTH):
+        html = note_edits_templates.render_note_edit_diff_html(
+            note=note,
+            hunks=session.hunks,
+            edit_id=session.id,
+            summary=session.summary,
+        )
+    if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+        remote_dom = note_edits_dom.render_note_edit_diff_dom(
+            note=note,
+            hunks=session.hunks,
+            edit_id=session.id,
+            summary=session.summary,
+        )
+    return html, remote_dom
 
 
 @mcp.tool()
 async def accept_note_edit_hunk(
     edit_id: str,
     hunk_id: str,
+    ui_format: str = "html",
 ) -> List[Union[TextContent, EmbeddedResource]]:
     """Accept a specific hunk in a note edit session.
 
@@ -787,35 +830,47 @@ async def accept_note_edit_hunk(
     Args:
         edit_id: The edit session ID
         hunk_id: The hunk ID to accept (e.g., "h1", "h2")
+        ui_format: UI format - 'html' (default), 'remote-dom', or 'both'
 
     Returns:
         Updated diff preview UI
     """
     logger.info(f"Accepting hunk: edit_id={edit_id}, hunk_id={hunk_id}")
+    fmt = validate_ui_format(ui_format)
 
     session, note, error = _get_session_and_note(edit_id)
     if error:
-        remote_dom = note_edits_dom.render_note_edit_error_dom(error)
+        html = None
+        remote_dom = None
+        if fmt in (UIFormat.HTML, UIFormat.BOTH):
+            html = note_edits_templates.render_note_edit_error_html(error)
+        if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+            remote_dom = note_edits_dom.render_note_edit_error_dom(error)
         return build_ui_with_text_and_dom(
             uri=f"ui://toolbridge/notes/edit/{edit_id}/error",
-            html=None,
+            html=html,
             remote_dom=remote_dom,
             text_summary=error,
-            ui_format=UIFormat.REMOTE_DOM,
+            ui_format=fmt,
         )
 
     if not session.set_hunk_status(hunk_id, "accepted"):
         error = f"Hunk '{hunk_id}' not found in session"
-        remote_dom = note_edits_dom.render_note_edit_error_dom(error)
+        html = None
+        remote_dom = None
+        if fmt in (UIFormat.HTML, UIFormat.BOTH):
+            html = note_edits_templates.render_note_edit_error_html(error)
+        if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+            remote_dom = note_edits_dom.render_note_edit_error_dom(error)
         return build_ui_with_text_and_dom(
             uri=f"ui://toolbridge/notes/edit/{edit_id}/error",
-            html=None,
+            html=html,
             remote_dom=remote_dom,
             text_summary=error,
-            ui_format=UIFormat.REMOTE_DOM,
+            ui_format=fmt,
         )
 
-    remote_dom = _render_updated_diff(session, note)
+    html, remote_dom = _render_updated_diff(session, note, fmt)
     ui_uri = f"ui://toolbridge/notes/{session.note_uid}/edit/{edit_id}"
     ui_metadata = get_chat_metadata(
         frame_style=Layout.CHAT_FRAME_CARD,
@@ -824,10 +879,10 @@ async def accept_note_edit_hunk(
 
     return build_ui_with_text_and_dom(
         uri=ui_uri,
-        html=None,
+        html=html,
         remote_dom=remote_dom,
         text_summary=f"Accepted hunk {hunk_id}",
-        ui_format=UIFormat.REMOTE_DOM,
+        ui_format=fmt,
         remote_dom_ui_metadata=ui_metadata,
     )
 
@@ -836,6 +891,7 @@ async def accept_note_edit_hunk(
 async def reject_note_edit_hunk(
     edit_id: str,
     hunk_id: str,
+    ui_format: str = "html",
 ) -> List[Union[TextContent, EmbeddedResource]]:
     """Reject a specific hunk in a note edit session.
 
@@ -844,35 +900,47 @@ async def reject_note_edit_hunk(
     Args:
         edit_id: The edit session ID
         hunk_id: The hunk ID to reject (e.g., "h1", "h2")
+        ui_format: UI format - 'html' (default), 'remote-dom', or 'both'
 
     Returns:
         Updated diff preview UI
     """
     logger.info(f"Rejecting hunk: edit_id={edit_id}, hunk_id={hunk_id}")
+    fmt = validate_ui_format(ui_format)
 
     session, note, error = _get_session_and_note(edit_id)
     if error:
-        remote_dom = note_edits_dom.render_note_edit_error_dom(error)
+        html = None
+        remote_dom = None
+        if fmt in (UIFormat.HTML, UIFormat.BOTH):
+            html = note_edits_templates.render_note_edit_error_html(error)
+        if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+            remote_dom = note_edits_dom.render_note_edit_error_dom(error)
         return build_ui_with_text_and_dom(
             uri=f"ui://toolbridge/notes/edit/{edit_id}/error",
-            html=None,
+            html=html,
             remote_dom=remote_dom,
             text_summary=error,
-            ui_format=UIFormat.REMOTE_DOM,
+            ui_format=fmt,
         )
 
     if not session.set_hunk_status(hunk_id, "rejected"):
         error = f"Hunk '{hunk_id}' not found in session"
-        remote_dom = note_edits_dom.render_note_edit_error_dom(error)
+        html = None
+        remote_dom = None
+        if fmt in (UIFormat.HTML, UIFormat.BOTH):
+            html = note_edits_templates.render_note_edit_error_html(error)
+        if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+            remote_dom = note_edits_dom.render_note_edit_error_dom(error)
         return build_ui_with_text_and_dom(
             uri=f"ui://toolbridge/notes/edit/{edit_id}/error",
-            html=None,
+            html=html,
             remote_dom=remote_dom,
             text_summary=error,
-            ui_format=UIFormat.REMOTE_DOM,
+            ui_format=fmt,
         )
 
-    remote_dom = _render_updated_diff(session, note)
+    html, remote_dom = _render_updated_diff(session, note, fmt)
     ui_uri = f"ui://toolbridge/notes/{session.note_uid}/edit/{edit_id}"
     ui_metadata = get_chat_metadata(
         frame_style=Layout.CHAT_FRAME_CARD,
@@ -881,10 +949,10 @@ async def reject_note_edit_hunk(
 
     return build_ui_with_text_and_dom(
         uri=ui_uri,
-        html=None,
+        html=html,
         remote_dom=remote_dom,
         text_summary=f"Rejected hunk {hunk_id}",
-        ui_format=UIFormat.REMOTE_DOM,
+        ui_format=fmt,
         remote_dom_ui_metadata=ui_metadata,
     )
 
@@ -894,6 +962,7 @@ async def revise_note_edit_hunk(
     edit_id: str,
     hunk_id: str,
     revised_text: str,
+    ui_format: str = "html",
 ) -> List[Union[TextContent, EmbeddedResource]]:
     """Revise a specific hunk with custom text.
 
@@ -903,35 +972,47 @@ async def revise_note_edit_hunk(
         edit_id: The edit session ID
         hunk_id: The hunk ID to revise (e.g., "h1", "h2")
         revised_text: The custom text to use instead
+        ui_format: UI format - 'html' (default), 'remote-dom', or 'both'
 
     Returns:
         Updated diff preview UI
     """
     logger.info(f"Revising hunk: edit_id={edit_id}, hunk_id={hunk_id}")
+    fmt = validate_ui_format(ui_format)
 
     session, note, error = _get_session_and_note(edit_id)
     if error:
-        remote_dom = note_edits_dom.render_note_edit_error_dom(error)
+        html = None
+        remote_dom = None
+        if fmt in (UIFormat.HTML, UIFormat.BOTH):
+            html = note_edits_templates.render_note_edit_error_html(error)
+        if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+            remote_dom = note_edits_dom.render_note_edit_error_dom(error)
         return build_ui_with_text_and_dom(
             uri=f"ui://toolbridge/notes/edit/{edit_id}/error",
-            html=None,
+            html=html,
             remote_dom=remote_dom,
             text_summary=error,
-            ui_format=UIFormat.REMOTE_DOM,
+            ui_format=fmt,
         )
 
     if not session.set_hunk_status(hunk_id, "revised", revised_text=revised_text):
         error = f"Hunk '{hunk_id}' not found in session"
-        remote_dom = note_edits_dom.render_note_edit_error_dom(error)
+        html = None
+        remote_dom = None
+        if fmt in (UIFormat.HTML, UIFormat.BOTH):
+            html = note_edits_templates.render_note_edit_error_html(error)
+        if fmt in (UIFormat.REMOTE_DOM, UIFormat.BOTH):
+            remote_dom = note_edits_dom.render_note_edit_error_dom(error)
         return build_ui_with_text_and_dom(
             uri=f"ui://toolbridge/notes/edit/{edit_id}/error",
-            html=None,
+            html=html,
             remote_dom=remote_dom,
             text_summary=error,
-            ui_format=UIFormat.REMOTE_DOM,
+            ui_format=fmt,
         )
 
-    remote_dom = _render_updated_diff(session, note)
+    html, remote_dom = _render_updated_diff(session, note, fmt)
     ui_uri = f"ui://toolbridge/notes/{session.note_uid}/edit/{edit_id}"
     ui_metadata = get_chat_metadata(
         frame_style=Layout.CHAT_FRAME_CARD,
@@ -940,10 +1021,10 @@ async def revise_note_edit_hunk(
 
     return build_ui_with_text_and_dom(
         uri=ui_uri,
-        html=None,
+        html=html,
         remote_dom=remote_dom,
         text_summary=f"Revised hunk {hunk_id}",
-        ui_format=UIFormat.REMOTE_DOM,
+        ui_format=fmt,
         remote_dom_ui_metadata=ui_metadata,
     )
 
