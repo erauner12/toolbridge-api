@@ -33,9 +33,8 @@ RUN npm ci --omit=dev
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
 
-# Create non-root user
-RUN useradd -m -u 1000 app && chown -R app:app /app
-USER app
+# Run as the existing node user (already exists in node:20-slim)
+USER node
 
 # Environment variables
 ENV NODE_ENV=production
