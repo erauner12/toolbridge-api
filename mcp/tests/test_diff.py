@@ -272,6 +272,36 @@ class TestApplyHunkDecisions:
         result = apply_hunk_decisions(hunks, decisions)
         assert result == "constant"
 
+    def test_preserves_blank_line_hunks(self):
+        """Test that blank-line-only hunks are preserved when accepted."""
+        hunks = [
+            DiffHunk(kind="unchanged", original="line 1", proposed="line 1", id="h1"),
+            DiffHunk(kind="added", original="", proposed="", id="h2"),  # Blank line
+            DiffHunk(kind="unchanged", original="line 3", proposed="line 3", id="h3"),
+        ]
+        decisions = {
+            "h2": HunkDecision(status="accepted"),
+        }
+
+        result = apply_hunk_decisions(hunks, decisions)
+        # Should have blank line between line 1 and line 3
+        assert result == "line 1\n\nline 3"
+
+    def test_rejected_blank_line_removal_keeps_blank(self):
+        """Test that rejecting removal of blank line keeps the blank."""
+        hunks = [
+            DiffHunk(kind="unchanged", original="line 1", proposed="line 1", id="h1"),
+            DiffHunk(kind="removed", original="", proposed="", id="h2"),  # Blank line being removed
+            DiffHunk(kind="unchanged", original="line 3", proposed="line 3", id="h3"),
+        ]
+        decisions = {
+            "h2": HunkDecision(status="rejected"),  # Keep the blank line
+        }
+
+        result = apply_hunk_decisions(hunks, decisions)
+        # Should have blank line preserved
+        assert result == "line 1\n\nline 3"
+
 
 class TestCountChanges:
     """Tests for count_changes function."""

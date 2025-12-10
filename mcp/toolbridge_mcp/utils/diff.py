@@ -328,14 +328,13 @@ def apply_hunk_decisions(
 def _join_segments(segments: List[str]) -> str:
     """
     Join content segments, handling newlines properly.
-    
+
     Each segment already has internal newlines from the original/proposed
-    content. We join with a single newline between non-empty segments.
+    content. We join with a single newline between segments.
+
+    Empty strings are preserved - they represent intentional blank lines.
     """
-    result_parts: List[str] = []
-    
-    for segment in segments:
-        if segment:  # Skip empty segments
-            result_parts.append(segment)
-    
+    # Filter out None values but keep empty strings (blank lines)
+    result_parts = [s for s in segments if s is not None]
+
     return "\n".join(result_parts)
