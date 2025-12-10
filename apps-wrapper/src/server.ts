@@ -158,8 +158,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     // Proxy to Python MCP backend
     const result = await mcpClient.callTool(name, args || {});
 
+    console.error(`[Apps] Tool result keys:`, Object.keys(result));
+    console.error(`[Apps] structuredContent type:`, typeof result.structuredContent);
+    console.error(`[Apps] content length:`, result.content?.length);
+
     // Extract structured data from the result if available
-    const structuredContent = result.structuredContent || result.content;
+    // IMPORTANT: structuredContent must be an object, not an array
+    // ChatGPT Apps SDK expects { key: value } format for template hydration
+    let structuredContent: Record<string, unknown> | undefined = undefined;
+
+    if (result.structuredContent && typeof result.structuredContent === 'object' && !Array.isArray(result.structuredContent)) {
+      structuredContent = result.structuredContent as Record<string, unknown>;
+    } else if (result.content && result.content.length > 0) {
+      // Try to extract structured data from text content
+      const textContent = result.content.find(c => c.type === 'text');
+      if (textContent && textContent.text) {
+        try {
+          const parsed = JSON.parse(textContent.text);
+          if (typeof parsed === 'object' && !Array.isArray(parsed)) {
+            structuredContent = parsed;
+          } else if (Array.isArray(parsed)) {
+            // Wrap array in an object for ChatGPT
+            structuredContent = { items: parsed, count: parsed.length };
+          }
+        } catch {
+          // Not JSON, use text as-is
+          structuredContent = { text: textContent.text };
+        }
+      }
+    }
+
+    console.error(`[Apps] Final structuredContent:`, structuredContent ? 'object' : 'undefined');
 
     // Create embedded UI resource for MCP-UI hosts (without adapter)
     let embeddedResource: UIResource | null = null;
