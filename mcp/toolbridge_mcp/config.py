@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     # Private key for signing backend JWTs if not using backend /token-exchange endpoint
     jwt_signing_key: str | None = None
 
+    # UI Configuration
+    # HTML MIME type for UI resources:
+    # - "text/html" (default): Works with all MCP-UI hosts (ToolBridge, Nanobot, Goose)
+    # - "text/html+skybridge": Required for ChatGPT Apps SDK
+    ui_html_mime_type: str = "text/html"
+
     # Logging
     log_level: str = "INFO"
 

@@ -11,9 +11,17 @@ from typing import Dict, Any, Optional, List, Union
 
 from mcp_ui_server import create_ui_resource
 from mcp.types import TextContent, EmbeddedResource
+from toolbridge_mcp.config import settings
 
 # Type alias for content blocks that include both text and UI
 UIContent = List[Union[TextContent, EmbeddedResource]]
+
+
+# HTML MIME type loaded from settings.
+# Configure via TOOLBRIDGE_UI_HTML_MIME_TYPE environment variable:
+# - "text/html" (default): Works with all MCP-UI hosts
+# - "text/html+skybridge": Required for ChatGPT Apps SDK
+HTML_MIME_TYPE = settings.ui_html_mime_type
 
 
 class UIFormat(str, Enum):
@@ -32,7 +40,8 @@ def _build_html_resource(uri: str, html: str) -> EmbeddedResource:
         html: HTML markup to render
 
     Returns:
-        EmbeddedResource with text/html mimeType
+        EmbeddedResource with mimeType set to HTML_MIME_TYPE
+        (text/html for standard MCP-UI, text/html+skybridge for ChatGPT Apps)
     """
     ui_resource = create_ui_resource({
         "uri": uri,
@@ -48,6 +57,12 @@ def _build_html_resource(uri: str, html: str) -> EmbeddedResource:
         },
         "encoding": "text",
     })
+
+    # Enforce configured HTML MIME type (e.g., for ChatGPT Apps Skybridge compatibility)
+    if hasattr(ui_resource, 'resource') and hasattr(ui_resource.resource, 'mimeType'):
+        if ui_resource.resource.mimeType != HTML_MIME_TYPE:
+            ui_resource.resource.mimeType = HTML_MIME_TYPE
+
     return ui_resource
 
 
