@@ -164,7 +164,7 @@ def render_note_edit_diff_dom(
                     "type": "tool",
                     "payload": {
                         "toolName": "discard_note_edit",
-                        "params": {"edit_id": edit_id},
+                        "params": {"edit_id": edit_id, "ui_format": "remote-dom"},
                     },
                 },
             },
@@ -180,7 +180,7 @@ def render_note_edit_diff_dom(
                     "type": "tool",
                     "payload": {
                         "toolName": "apply_note_edit",
-                        "params": {"edit_id": edit_id},
+                        "params": {"edit_id": edit_id, "ui_format": "remote-dom"},
                     },
                 },
             },
@@ -321,7 +321,11 @@ def _render_hunk_block(edit_id: str, hunk: "NoteEditHunkState") -> Dict[str, Any
                         "type": "tool",
                         "payload": {
                             "toolName": "reject_note_edit_hunk",
-                            "params": {"edit_id": edit_id, "hunk_id": hunk.id},
+                            "params": {
+                                "edit_id": edit_id,
+                                "hunk_id": hunk.id,
+                                "ui_format": "remote-dom",
+                            },
                         },
                     },
                 },
@@ -341,6 +345,7 @@ def _render_hunk_block(edit_id: str, hunk: "NoteEditHunkState") -> Dict[str, Any
                                 "hunk_id": hunk.id,
                                 "needsInput": True,
                                 "prompt": "Enter replacement text for this change",
+                                "ui_format": "remote-dom",
                             },
                         },
                     },
@@ -356,7 +361,11 @@ def _render_hunk_block(edit_id: str, hunk: "NoteEditHunkState") -> Dict[str, Any
                         "type": "tool",
                         "payload": {
                             "toolName": "accept_note_edit_hunk",
-                            "params": {"edit_id": edit_id, "hunk_id": hunk.id},
+                            "params": {
+                                "edit_id": edit_id,
+                                "hunk_id": hunk.id,
+                                "ui_format": "remote-dom",
+                            },
                         },
                     },
                 },

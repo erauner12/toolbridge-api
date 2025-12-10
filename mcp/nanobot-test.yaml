@@ -6,6 +6,12 @@ agents:
     name: ToolBridge UI Tester
     model: gpt-4o
     mcpServers: toolbridge-ui
+    instructions: |
+      You are a ToolBridge UI tester. When calling ToolBridge UI tools, always use
+      ui_format: "html" (not "remote-dom") to ensure the UI renders correctly.
+
+      For all *_ui tools (list_notes_ui, show_note_ui, edit_note_ui, etc.),
+      pass ui_format="html" in the parameters.
 
 mcpServers:
   toolbridge-ui:
