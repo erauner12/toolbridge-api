@@ -7,10 +7,13 @@
  * - Static templates with adapter enabled → ChatGPT (text/html+skybridge)
  * - Embedded resources without adapter → MCP-UI hosts (text/html)
  * - Tool responses include BOTH for cross-host compatibility
+ *
+ * Supports both stdio (local) and HTTP/SSE (Fly.io) transports.
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -18,6 +21,7 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { createUIResource, type UIResource } from "@mcp-ui/server";
+import express from "express";
 
 import { McpClient } from "./mcp-client.js";
 import { TOOL_DEFINITIONS } from "./tools/index.js";
@@ -27,6 +31,8 @@ import { RESOURCE_DEFINITIONS, createWidgetHtml } from "./resources/index.js";
 const PYTHON_MCP_URL = process.env.PYTHON_MCP_URL || "https://toolbridge-mcp-staging.fly.dev/mcp";
 const SERVER_NAME = "ToolBridge Apps";
 const SERVER_VERSION = "1.0.0";
+const PORT = parseInt(process.env.PORT || "8080", 10);
+const USE_HTTP = process.env.USE_HTTP === "true" || process.env.NODE_ENV === "production";
 
 // Create MCP client to proxy to Python backend
 const mcpClient = new McpClient(PYTHON_MCP_URL);
@@ -207,18 +213,61 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// START SERVER
+// START SERVER - HTTP/SSE for Fly.io, stdio for local
 // ════════════════════════════════════════════════════════════════════════════
+
+async function startHttpServer() {
+  const app = express();
+
+  // Health check endpoint
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok", server: SERVER_NAME, version: SERVER_VERSION });
+  });
+
+  // SSE endpoint for MCP
+  app.get("/sse", async (req, res) => {
+    console.error("[Apps] SSE connection established");
+
+    const transport = new SSEServerTransport("/message", res);
+    await server.connect(transport);
+
+    // Handle client disconnect
+    req.on("close", () => {
+      console.error("[Apps] SSE connection closed");
+    });
+  });
+
+  // Message endpoint for MCP
+  app.post("/message", express.json(), async (req, res) => {
+    console.error("[Apps] Received message:", JSON.stringify(req.body));
+    // The SSE transport handles this internally
+    res.status(200).end();
+  });
+
+  app.listen(PORT, () => {
+    console.error(`[Apps] HTTP server listening on port ${PORT}`);
+    console.error(`[Apps] SSE endpoint: http://localhost:${PORT}/sse`);
+    console.error(`[Apps] Health check: http://localhost:${PORT}/health`);
+  });
+}
+
+async function startStdioServer() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("[Apps] Server connected via stdio");
+}
 
 async function main() {
   console.error(`[Apps] Starting ${SERVER_NAME} v${SERVER_VERSION}`);
   console.error(`[Apps] Python MCP backend: ${PYTHON_MCP_URL}`);
   console.error(`[Apps] Registered ${staticTemplates.size} static templates`);
+  console.error(`[Apps] Transport mode: ${USE_HTTP ? "HTTP/SSE" : "stdio"}`);
 
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-
-  console.error("[Apps] Server connected via stdio");
+  if (USE_HTTP) {
+    await startHttpServer();
+  } else {
+    await startStdioServer();
+  }
 }
 
 main().catch((error) => {
