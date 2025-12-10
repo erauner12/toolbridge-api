@@ -59,3 +59,4 @@ dist/
 build/
 mcp/.env.bak
 mcp/nanobot.db
+apps-wrapper/node_modules

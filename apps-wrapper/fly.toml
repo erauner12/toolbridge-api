@@ -1,0 +1,25 @@
+# ChatGPT Apps SDK Wrapper for ToolBridge
+# Deploys as a separate service from the Python MCP backend
+
+app = "toolbridge-apps"
+primary_region = "sjc"
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+  PYTHON_MCP_URL = "https://toolbridge-mcp-staging.fly.dev/mcp"
+  PUBLIC_BASE_URL = "https://toolbridge-apps.fly.dev"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
