@@ -105,6 +105,28 @@ class TestComputeLineDiff:
         # Should contain all lines
         assert result[0].original == original
 
+    def test_preserves_multiple_blank_lines_between_changes(self):
+        """Test that multiple consecutive blank lines are preserved."""
+        original = "A\n\n\nB"  # A, 2 blank lines, B
+        proposed = "A\n\n\nC"  # A, 2 blank lines, C
+        result = compute_line_diff(original, proposed, truncate_unchanged=False)
+
+        # Should have unchanged (A + blank lines) and modified (B -> C)
+        assert len(result) == 2
+        assert result[0].kind == "unchanged"
+        assert result[1].kind == "modified"
+
+        # Unchanged section should preserve the blank lines
+        # The text is "A\n\n" (A followed by 2 newlines, minus the trailing one)
+        assert result[0].original == "A\n\n"
+        assert result[0].proposed == "A\n\n"
+
+        # Round-trip: applying all accepted should reproduce proposed
+        annotated = annotate_hunks_with_ids(result)
+        decisions = {h.id: HunkDecision(status="accepted") for h in annotated}
+        final = apply_hunk_decisions(annotated, decisions)
+        assert final == proposed
+
 
 class TestAnnotateHunksWithIds:
     """Tests for annotate_hunks_with_ids function."""

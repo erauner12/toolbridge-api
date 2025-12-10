@@ -96,9 +96,15 @@ def compute_line_diff(
     hunks: List[DiffHunk] = []
     
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        # Preserve whitespace - important for markdown/code where indentation matters
-        orig_text = "".join(orig_lines[i1:i2]).rstrip("\n")
-        new_text = "".join(new_lines[j1:j2]).rstrip("\n")
+        # Join lines preserving their endings, then strip only the final newline.
+        # This keeps internal blank lines intact while avoiding trailing newline duplication.
+        orig_text = "".join(orig_lines[i1:i2])
+        new_text = "".join(new_lines[j1:j2])
+        # Strip only a single trailing newline (not all of them) to avoid duplication when joining
+        if orig_text.endswith("\n"):
+            orig_text = orig_text[:-1]
+        if new_text.endswith("\n"):
+            new_text = new_text[:-1]
         
         if tag == "equal":
             # Unchanged section - optionally truncate if too long (for display only)
