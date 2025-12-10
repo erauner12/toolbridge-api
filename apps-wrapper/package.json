@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
-    "@mcp-ui/server": "^0.1.0",
+    "@mcp-ui/server": "^5.16.2",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "express": "^4.21.0",
     "zod": "^3.23.8"
