@@ -1,4 +1,4 @@
-.PHONY: help dev dev-grpc test test-unit test-integration test-smoke test-mcp-auth test-all test-e2e ci build docker-build docker-build-local docker-build-multiarch docker-release docker-up docker-down helm-lint helm-package helm-push helm-release clean format format-python format-check format-check-python lint-python lint-fix-python
+.PHONY: help dev dev-grpc test test-unit test-integration test-smoke test-mcp-auth test-all test-e2e ci build docker-build docker-build-local docker-build-multiarch docker-release docker-up docker-down helm-lint helm-package helm-push helm-release helm-mcp-lint helm-mcp-package helm-mcp-push helm-mcp-release docker-mcp-build-local docker-mcp-release clean format format-python format-check format-check-python lint-python lint-fix-python
 
 # Docker configuration
 DOCKER_REGISTRY ?= ghcr.io
@@ -8,10 +8,15 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 FULL_IMAGE_NAME = $(DOCKER_REGISTRY)/$(DOCKER_USERNAME)/$(IMAGE_NAME)
 PLATFORMS ?= linux/amd64,linux/arm64
 
-# Helm configuration
+# Helm configuration (API chart)
 CHART_NAME ?= toolbridge-api
 CHART_VERSION ?= $(shell grep '^version:' chart/Chart.yaml | awk '{print $$2}')
 HELM_REGISTRY ?= oci://$(DOCKER_REGISTRY)/$(DOCKER_USERNAME)/charts
+
+# Helm configuration (MCP chart)
+MCP_CHART_NAME ?= toolbridge-mcp
+MCP_CHART_VERSION ?= $(shell grep '^version:' chart-mcp/Chart.yaml | awk '{print $$2}')
+MCP_IMAGE_NAME ?= toolbridge-mcp
 
 # Default target
 help:
@@ -44,13 +49,23 @@ help:
 	@echo "  VERSION=vX.Y.Z        - Set image version (default: git describe)"
 	@echo "  PLATFORMS=linux/amd64 - Override target platforms"
 	@echo ""
-	@echo "Helm Chart:"
-	@echo "  make helm-lint        - Lint Helm chart"
-	@echo "  make helm-package     - Package chart as .tgz"
-	@echo "  make helm-push        - Push chart to OCI registry"
-	@echo "  make helm-release     - Package and push chart (VERSION=vX.Y.Z)"
+	@echo "Helm Chart (API):"
+	@echo "  make helm-lint        - Lint API Helm chart"
+	@echo "  make helm-package     - Package API chart as .tgz"
+	@echo "  make helm-push        - Push API chart to OCI registry"
+	@echo "  make helm-release     - Package and push API chart"
 	@echo ""
-	@echo "Database:"
+	@echo "Helm Chart (MCP):"
+	@echo "  make helm-mcp-lint    - Lint MCP Helm chart"
+	@echo "  make helm-mcp-package - Package MCP chart as .tgz"
+	@echo "  make helm-mcp-push    - Push MCP chart to OCI registry"
+	@echo "  make helm-mcp-release - Package and push MCP chart"
+	@echo ""
+	@echo "Docker (MCP):"
+	@echo "  make docker-mcp-build-local - Build MCP image for local platform"
+	@echo "  make docker-mcp-release     - Build and push multi-arch MCP image"
+	@echo ""
+	@echo "Database:
 	@echo "  make migrate          - Run migrations against local DB"
 	@echo ""
 	@echo "Code Quality:"
@@ -345,3 +360,71 @@ helm-release: helm-lint helm-package helm-push
 	@echo ""
 	@echo "Install with:"
 	@echo "  helm install $(CHART_NAME) $(HELM_REGISTRY)/$(CHART_NAME) --version $(CHART_VERSION)"
+
+# ============================================================================
+# MCP Chart Management
+# ============================================================================
+
+# Lint MCP Helm chart
+helm-mcp-lint:
+	@echo "Linting MCP Helm chart..."
+	helm lint ./chart-mcp
+	@echo "✓ MCP Helm chart is valid"
+
+# Package MCP Helm chart
+helm-mcp-package:
+	@echo "Packaging MCP Helm chart..."
+	@echo "Chart: $(MCP_CHART_NAME)"
+	@echo "Version: $(MCP_CHART_VERSION)"
+	helm package ./chart-mcp
+	@echo "✓ Packaged $(MCP_CHART_NAME)-$(MCP_CHART_VERSION).tgz"
+
+# Push MCP Helm chart to OCI registry
+helm-mcp-push:
+	@echo "Pushing MCP Helm chart to OCI registry..."
+	@echo "Registry: $(HELM_REGISTRY)"
+	@echo "Chart: $(MCP_CHART_NAME)"
+	@echo "Version: $(MCP_CHART_VERSION)"
+	helm push $(MCP_CHART_NAME)-$(MCP_CHART_VERSION).tgz $(HELM_REGISTRY)
+	@echo "✓ Pushed $(HELM_REGISTRY)/$(MCP_CHART_NAME):$(MCP_CHART_VERSION)"
+
+# Package and push MCP Helm chart (one-step release)
+helm-mcp-release: helm-mcp-lint helm-mcp-package helm-mcp-push
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✓ Released MCP Helm chart $(MCP_CHART_NAME):$(MCP_CHART_VERSION)"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@echo "Install with:"
+	@echo "  helm install $(MCP_CHART_NAME) $(HELM_REGISTRY)/$(MCP_CHART_NAME) --version $(MCP_CHART_VERSION)"
+
+# ============================================================================
+# MCP Docker Image
+# ============================================================================
+
+# Build MCP Docker image for local platform (fast, for development)
+docker-mcp-build-local:
+	@echo "Building MCP Docker image for local platform..."
+	docker build -f mcp/Dockerfile.mcp-only -t $(MCP_IMAGE_NAME):latest ./mcp
+	@echo "✓ Built $(MCP_IMAGE_NAME):latest"
+
+# Build and push multi-architecture MCP Docker image (for production)
+docker-mcp-release:
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "Building and pushing multi-arch MCP image"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "Registry: $(DOCKER_REGISTRY)/$(DOCKER_USERNAME)/$(MCP_IMAGE_NAME)"
+	@echo "Version:  $(VERSION)"
+	@echo "Platforms: $(PLATFORMS)"
+	@echo ""
+	docker buildx build \
+		--platform $(PLATFORMS) \
+		-f mcp/Dockerfile.mcp-only \
+		-t $(DOCKER_REGISTRY)/$(DOCKER_USERNAME)/$(MCP_IMAGE_NAME):$(VERSION) \
+		-t $(DOCKER_REGISTRY)/$(DOCKER_USERNAME)/$(MCP_IMAGE_NAME):latest \
+		--push \
+		./mcp
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✓ Released $(DOCKER_REGISTRY)/$(DOCKER_USERNAME)/$(MCP_IMAGE_NAME):$(VERSION)"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

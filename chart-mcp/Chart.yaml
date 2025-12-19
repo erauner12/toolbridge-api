@@ -1,0 +1,16 @@
+apiVersion: v2
+name: toolbridge-mcp
+description: A Helm chart for ToolBridge MCP - FastMCP proxy service with WorkOS AuthKit authentication
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - mcp
+  - toolbridge
+  - fastmcp
+  - authkit
+maintainers:
+  - name: erauner12
+    url: https://github.com/erauner12
+sources:
+  - https://github.com/erauner12/toolbridge-api
