@@ -57,9 +57,10 @@ mcp:
       memory: 512Mi
 
   # Health check configuration
+  # Use OAuth metadata endpoint which is publicly accessible
   livenessProbe:
     httpGet:
-      path: /mcp
+      path: /.well-known/oauth-protected-resource
       port: 8001
     initialDelaySeconds: 10
     periodSeconds: 30
@@ -68,7 +69,7 @@ mcp:
 
   readinessProbe:
     httpGet:
-      path: /mcp
+      path: /.well-known/oauth-protected-resource
       port: 8001
     initialDelaySeconds: 5
     periodSeconds: 10
