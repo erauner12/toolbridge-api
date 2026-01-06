@@ -21,6 +21,10 @@ WORKDIR /app/mcp
 # Copy Python project files
 COPY pyproject.toml uv.lock README.md ./
 
+# Copy source code BEFORE uv sync so the package includes all modules
+# This is critical: uv sync installs the local package which needs the source
+COPY toolbridge_mcp ./toolbridge_mcp
+
 # Install dependencies into virtual environment
 RUN uv sync --no-dev --frozen
 
@@ -43,6 +47,11 @@ COPY --from=builder /app/mcp/.venv /app/mcp/.venv
 
 # Copy Python source code
 COPY toolbridge_mcp ./toolbridge_mcp
+
+# Fix permissions: ensure all files/dirs are world-readable
+# This is critical for K8s pods that run as a different UID than the builder
+# (e.g., podSecurityContext.runAsUser: 65534)
+RUN chmod -R go+rX /app
 
 # Create non-root user
 RUN useradd -m -u 1000 app && \

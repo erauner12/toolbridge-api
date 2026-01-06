@@ -86,5 +86,26 @@ class Settings(BaseSettings):
             )
 
 
-# Global settings instance
-settings = Settings()
+# Global settings instance - lazily loaded to avoid import-time validation errors
+# This allows modules to import config.py without requiring env vars to be set
+_settings: Settings | None = None
+
+
+def get_settings() -> Settings:
+    """Get the global settings instance, creating it on first access."""
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
+
+
+# For backwards compatibility, expose settings as a lazy property
+# Note: Direct access to `settings` still works but triggers instantiation
+class _SettingsProxy:
+    """Proxy that defers Settings instantiation until first attribute access."""
+
+    def __getattr__(self, name: str):
+        return getattr(get_settings(), name)
+
+
+settings = _SettingsProxy()
