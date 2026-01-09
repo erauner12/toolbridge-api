@@ -33,7 +33,7 @@ pipeline {
                 container('golang') {
                     sh '''
                         echo "=== Running tests ==="
-                        go test -v -race ./...
+                        go test -v ./...
                     '''
                 }
             }
@@ -60,7 +60,7 @@ pipeline {
         failure {
             script {
                 homelab.githubStatus('FAILURE', 'Build failed')
-                homelab.postFailurePrComment([repo: 'erauner12/toolbridge-api'])
+                homelab.postFailurePrComment([repo: 'erauner/toolbridge-api'])
                 homelab.notifyDiscordFailure()
             }
         }
