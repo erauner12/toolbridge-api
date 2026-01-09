@@ -1,0 +1,139 @@
+# Default values for toolbridge-mcp
+
+# Image configuration
+image:
+  repository: ghcr.io/erauner12/toolbridge-mcp
+  pullPolicy: IfNotPresent
+  tag: "v0.1.0"
+
+# Number of MCP replicas
+# NOTE: MCP service is stateless, safe to scale horizontally
+replicaCount: 2
+
+# Service account
+serviceAccount:
+  create: true
+  name: toolbridge-mcp
+
+# MCP service configuration
+mcp:
+  # Server binding
+  host: "0.0.0.0"
+  port: 8001
+
+  # Logging level (DEBUG, INFO, WARNING, ERROR)
+  logLevel: "INFO"
+
+  # WorkOS AuthKit Configuration (REQUIRED)
+  # Users authenticate via browser through WorkOS AuthKit OAuth 2.1 + PKCE flow
+  authkit:
+    domain: ""  # e.g., "svelte-monolith-27-staging.authkit.app" (required)
+
+  # Public URL of this MCP server (REQUIRED)
+  # Used in OAuth metadata and resource identification
+  publicBaseUrl: ""  # e.g., "https://toolbridge-mcp.erauner.dev"
+
+  # Backend API Configuration
+  # The Go API that MCP server calls after token exchange
+  backend:
+    baseUrl: "https://toolbridgeapi.erauner.dev"  # Go API URL
+    audience: "https://toolbridgeapi.erauner.dev"  # Backend API audience for token exchange
+
+  # UI Configuration
+  # HTML MIME type for UI resources
+  uiHtmlMimeType: "text/html"  # Use "text/html+skybridge" for ChatGPT Apps SDK
+
+  # Graceful shutdown timeout (seconds)
+  # Must be less than container terminationGracePeriodSeconds
+  shutdownTimeoutSeconds: 7
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Health check configuration
+  # Use OAuth metadata endpoint which is publicly accessible
+  livenessProbe:
+    httpGet:
+      path: /.well-known/oauth-protected-resource/mcp
+      port: 8001
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /.well-known/oauth-protected-resource/mcp
+      port: 8001
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8001
+
+# HTTPRoute (Gateway API ingress)
+ingress:
+  enabled: true
+  gateway:
+    name: envoy-public
+    namespace: envoy-gateway-system
+  hostname: ""  # Set via override, e.g., toolbridge-mcp.erauner.dev
+  annotations: {}  # Optional annotations for HTTPRoute (e.g., external-dns)
+
+# Certificate configuration
+certificate:
+  enabled: true
+  issuerRef:
+    name: letsencrypt-cloudflare-home
+    kind: ClusterIssuer
+  dnsNames: []  # Set via override, defaults to ingress.hostname
+
+# Secrets configuration
+secrets:
+  # Use existing secret instead of creating one
+  # Secret must contain: authkit-domain (optional if in values)
+  existingSecret: ""
+
+  # JWT signing key for token exchange (optional)
+  # If not set, MCP uses backend /auth/token-exchange endpoint
+  jwtSigningKey: ""
+
+# Pod configuration
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Container termination grace period
+terminationGracePeriodSeconds: 15
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Additional labels
+labels: {}

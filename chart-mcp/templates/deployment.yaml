@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "toolbridge-mcp.fullname" . }}
+  labels:
+    {{- include "toolbridge-mcp.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "toolbridge-mcp.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "toolbridge-mcp.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Trigger rollout on config changes
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "toolbridge-mcp.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      containers:
+      - name: mcp
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+        {{- with .Values.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+
+        ports:
+        - containerPort: {{ .Values.mcp.port }}
+          name: http
+          protocol: TCP
+
+        env:
+        # Server configuration from ConfigMap
+        - name: TOOLBRIDGE_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "toolbridge-mcp.fullname" . }}-config
+              key: TOOLBRIDGE_HOST
+        - name: TOOLBRIDGE_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "toolbridge-mcp.fullname" . }}-config
+              key: TOOLBRIDGE_PORT
+        - name: TOOLBRIDGE_LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "toolbridge-mcp.fullname" . }}-config
+              key: TOOLBRIDGE_LOG_LEVEL
+
+        # WorkOS AuthKit configuration
+        - name: TOOLBRIDGE_AUTHKIT_DOMAIN
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "toolbridge-mcp.fullname" . }}-config
+              key: TOOLBRIDGE_AUTHKIT_DOMAIN
+
+        # Public URL for OAuth metadata
+        - name: TOOLBRIDGE_PUBLIC_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "toolbridge-mcp.fullname" . }}-config
+              key: TOOLBRIDGE_PUBLIC_BASE_URL
+
+        # Backend API configuration
+        - name: TOOLBRIDGE_GO_API_BASE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "toolbridge-mcp.fullname" . }}-config
+              key: TOOLBRIDGE_GO_API_BASE_URL
+        - name: TOOLBRIDGE_BACKEND_API_AUDIENCE
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "toolbridge-mcp.fullname" . }}-config
+              key: TOOLBRIDGE_BACKEND_API_AUDIENCE
+
+        # UI configuration
+        - name: TOOLBRIDGE_UI_HTML_MIME_TYPE
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "toolbridge-mcp.fullname" . }}-config
+              key: TOOLBRIDGE_UI_HTML_MIME_TYPE
+
+        # Shutdown timeout
+        - name: TOOLBRIDGE_SHUTDOWN_TIMEOUT_SECONDS
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "toolbridge-mcp.fullname" . }}-config
+              key: TOOLBRIDGE_SHUTDOWN_TIMEOUT_SECONDS
+
+        # Optional: JWT signing key from secret
+        {{- if or .Values.secrets.jwtSigningKey .Values.secrets.existingSecret }}
+        - name: TOOLBRIDGE_JWT_SIGNING_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "toolbridge-mcp.secretName" . }}
+              key: jwt-signing-key
+              optional: true
+        {{- end }}
+
+        # Health checks
+        {{- with .Values.mcp.livenessProbe }}
+        livenessProbe:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+
+        {{- with .Values.mcp.readinessProbe }}
+        readinessProbe:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+
+        resources:
+          {{- toYaml .Values.mcp.resources | nindent 10 }}
+
+        # Writable tmp directory for Python
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+
+      volumes:
+      - name: tmp
+        emptyDir: {}
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
