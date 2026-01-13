@@ -147,6 +147,21 @@ postgresql:
   storageClass: longhorn
   imageName: ghcr.io/cloudnative-pg/postgresql:16
 
+  # CNPG backup configuration (optional)
+  # Configures Barman Object Store for WAL archiving and base backups
+  backup:
+    enabled: false  # Set to true to enable backups
+    destinationPath: ""  # e.g., "s3://bucket-name/cnpg/appname/"
+    endpointURL: ""  # e.g., "https://s3.us-east-005.backblazeb2.com"
+    retentionPolicy: "7d"  # How long to keep backups
+    s3Credentials:
+      accessKeyId:
+        name: ""  # Secret name containing AWS_ACCESS_KEY_ID
+        key: "AWS_ACCESS_KEY_ID"
+      secretAccessKey:
+        name: ""  # Secret name containing AWS_SECRET_ACCESS_KEY
+        key: "AWS_SECRET_ACCESS_KEY"
+
   # PostgreSQL parameters
   parameters:
     max_connections: "100"

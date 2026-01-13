@@ -33,4 +33,20 @@ spec:
 
   # High availability
   primaryUpdateStrategy: {{ .Values.postgresql.primaryUpdateStrategy }}
+
+  {{- if .Values.postgresql.backup.enabled }}
+  # Backup configuration
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ .Values.postgresql.backup.destinationPath | quote }}
+      endpointURL: {{ .Values.postgresql.backup.endpointURL | quote }}
+      s3Credentials:
+        accessKeyId:
+          name: {{ .Values.postgresql.backup.s3Credentials.accessKeyId.name }}
+          key: {{ .Values.postgresql.backup.s3Credentials.accessKeyId.key }}
+        secretAccessKey:
+          name: {{ .Values.postgresql.backup.s3Credentials.secretAccessKey.name }}
+          key: {{ .Values.postgresql.backup.s3Credentials.secretAccessKey.key }}
+    retentionPolicy: {{ .Values.postgresql.backup.retentionPolicy | quote }}
+  {{- end }}
 {{- end }}
